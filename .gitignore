@@ -1,0 +1,8 @@
+data/*
+!data/.keep
+reports/*
+!reports/.keep
+*.rds
+.Rhistory
+.Rproj.user
+.ipynb_checkpoints/

@@ -1,0 +1,29 @@
+# Optional overrides for notebook defaults. Notebooks read this file if present
+# but will run with their own in-notebook parameters when the file is absent.
+smoke_mode: true
+paths:
+  data_dir: data
+  reports_dir: reports
+  reference_dir: Reference
+attempt_pi:
+  time_knots: [60, 120, 300]
+  p_clip_min: 0.05
+  p_clip_max: 0.95
+  tau_grid: [0.03, 0.05, 0.07, 0.10]
+  distance_cap: 65
+  yardline_spline_df: 5
+xwp:
+  wp_spline_df: 6
+  yardline_spline_df: 6
+  turnover_spot_df: 4
+success_model:
+  distance_spline_df: 6
+  wind_bins: [0, 5, 10, 15, 25]
+  late_game_threshold: 120
+  include_control_function: true
+aipw:
+  calibration_bins: ["distance", "wind", "late_game"]
+  clip_pseudo_outcomes: true
+reporting:
+  reference_grid_tau: [0.03, 0.05, 0.07, 0.10]
+  reference_weather: ["calm", "indoor"]
