@@ -1,46 +1,52 @@
 # NFL Field Goal Kicker Model
 
-## Project Goals & Flow
-- Establish a notebook-first workflow for modeling NFL kicker decision making and execution.
-- Preserve legacy exploratory notebooks and samples under `Reference/` for context.
-- Build a staged pipeline:
-  1. Estimate attempt propensity \(\pi(X)\) for kickable fourth downs (PATs assumed attempted).
-  2. Model win probability deltas for field goal vs go-for-it decisions.
-  3. Fit IPW-weighted field goal/PAT success models.
-  4. Produce AIPW pseudo-outcomes for evaluation across all decisions.
-  5. Report predictive and standardized skill views for stakeholders.
+## Project Vision
+- Build a **notebook-first** workflow where every stage of the kicker modeling pipeline can run directly from an R (IRkernel) Jupyter notebook.
+- Preserve the legacy exploratory work under `Reference/` as read-only context for data lineage and sanity checks.
+- Prioritize transparency: each notebook declares its own defaults, utilities, and artifacts so it can be executed independently without relying on external packages or modules beyond CRAN libraries.
 
-## Notebook-First Philosophy
-- Core logic, feature engineering, and diagnostics live directly inside the notebooks.
-- Each notebook includes parameters, helper functions, and reporting cells so it is runnable on its own.
-- Optional overrides can be supplied via `config/params.yaml`, but every notebook carries sane defaults in-code.
-- Keep helper functions short (≤40 lines) and colocated in the "Utilities & Helpers" cell for discoverability.
+## Pipeline Roadmap
+| Notebook | Focus | Key Notes |
+| --- | --- | --- |
+| `01_data_prep.ipynb` | Carry forward and modernize the data preparation steps from the reference notebooks. | Cleans, joins, and engineers baseline features for kickable plays. |
+| `02_attempt_pi.ipynb` | Estimate attempt propensity \(\pi(X) = P(\text{FG attempt} \mid X)\). | Rolling-origin out-of-fold predictions across 2015–2024 with stabilized, clipped weights and effective sample size diagnostics. |
+| `03_xwp_modules.ipynb` | **Optional / paused** xWPA and conversion modules. | Placeholder scaffolding for future work on WP deltas and conversion rates (not required for the π-only core). |
+| `04_xfg_success_ipw.ipynb` | Fit success models M1 (baseline) and M2 (IPW + control-function). | Cloglog `glmmTMB` models for kicks, treating blocks as misses and setting PAT weights to 1. Includes a template for the optional M3 pseudo-label experiment. |
+| `05_aipw_eval.ipynb` | Evaluate the models with AIPW pseudo-outcomes. | Builds the full kickable decision set, computes AIPW outcomes, and prepares calibration/Brier diagnostics. |
+| `06_reporting_views.ipynb` | Package results for consumers. | Creates predictive (operational) and standardized skill views; standardized view drops the control-function covariate. |
 
-## Repository Structure
-```
-Reference/           # Legacy notebooks and sample data (read-only)
-notebooks/           # Primary modeling workflow (R notebooks via IRkernel)
-data/                # Local working data (ignored, `.keep` placeholder)
-reports/             # Generated plots, tables, diagnostics (`.keep` placeholder)
-config/params.yaml   # Optional parameter overrides (mirrors in-notebook defaults)
-```
+> **PAT Handling:** PATs enter the pipeline with \(\hat{\pi} = 1\Rightarrow w = 1\). Blocks are always recorded as misses. Weight clipping defaults to `[0.05, 0.98]` with stabilized means near 1.0.
 
-## Quickstart in VS Code
+## Notebook-First Conventions
+- Each notebook starts with a header markdown cell summarizing purpose, inputs, outputs, and quick links.
+- `SMOKE_MODE <- TRUE` by default for fast sanity checks on the sample CSVs under `Reference/`. Toggle to `FALSE` for full modeling runs.
+- Default parameters live inside the notebooks (`time_knots`, `late_flags`, clipping bounds, spline degrees of freedom, etc.). If `config/params.yaml` exists, overrides are merged, but notebooks never depend on it.
+- A dedicated "Utilities & Helpers" cell holds lightweight helper functions (≤40 lines each) for feature engineering, weighting, calibration, and plotting.
+- The final cell in every notebook writes `sessionInfo()` to `reports/session_info.txt` so downstream consumers can audit package versions.
+
+## Getting Started in VS Code
 1. Install R and the [IRkernel](https://irkernel.github.io/installation/).
-2. Clone this repository and open the folder in VS Code.
-3. Use the Jupyter extension and select the "R" kernel (IRkernel) for each notebook.
-4. Open `notebooks/01_attempt_pi.ipynb`.
-5. In the first code cell, ensure `SMOKE_MODE <- TRUE` to enable fast, sample-based execution.
-6. Run all cells. The notebook will read from the samples in `Reference/` and write lightweight artifacts to `reports/`.
-7. Disable `SMOKE_MODE` when ready to process full datasets (ensure local data lives under `data/`).
+2. Clone the repository and open it in VS Code with the Jupyter extension enabled.
+3. Open any notebook under `notebooks/` (start with `01_data_prep.ipynb`).
+4. Ensure the first code cell reads `SMOKE_MODE <- TRUE` for fast execution against the `Reference/` samples.
+5. Run all cells. Artifacts (CSV summaries, diagnostic placeholders, etc.) are written to `reports/` and ignored by git by default.
+6. When ready for full seasons, set `SMOKE_MODE <- FALSE`, provide raw data under `data/`, and (optionally) add overrides in `config/params.yaml`.
 
-## Data Handling Expectations
-- Keep large or sensitive raw data out of git; place working copies under `data/` (ignored).
-- Sample CSVs are stored under `Reference/` for smoke testing and documentation.
-- Generated reports, plots, and tables should land in `reports/` and will be ignored by git except for intentional artifacts.
+## Repository Layout
+```
+Reference/           # Legacy notebooks & sample CSVs (read-only)
+notebooks/           # Primary modeling workflow (IRkernel notebooks)
+data/.keep           # Placeholder for local data (git-ignored)
+reports/.keep        # Placeholder for generated artifacts (git-ignored)
+config/params.yaml   # Optional parameter overrides (never required)
+```
 
 ## Reporting Views
-- **Predictive (Operational) View**: Uses the IPW-weighted models as deployed to assess current performance and calibration.
-- **Standardized Skill View**: Scores kickers on a reference grid of situations without control-function covariates to compare underlying skill.
+- **Predictive (Operational):** Uses the IPW + control-function model (M2) on application data to describe current decision quality and calibration.
+- **Standardized Skill:** Re-scores kickers on a reference state grid without the control-function covariate to compare underlying execution skill across common scenarios.
 
-Each notebook saves at least one artifact in `reports/` (e.g., CSV summary, PNG plot) and writes session metadata to `reports/session_info.txt` when run.
+Both views rely on the π-only core; the xWPA notebook remains optional/paused until the win-probability modules are revisited.
+
+## Next Steps
+- PR#2 will implement the full rolling-origin attempt propensity workflow (`02_attempt_pi.ipynb`) and flesh out success models (`04_xfg_success_ipw.ipynb`).
+- PR#3 will focus on AIPW evaluation, reporting views, and ensuring `SMOKE_MODE` delivers fast end-to-end smoke tests.
