@@ -1,0 +1,154 @@
+Notebook: 05_xfg_success_aug.ipynb
+Section: Cross Validation
+Code:
+# --- Main Experiment Loop ---
+
+# Ensure prerequisites from previous cells are available
+stopifnot(exists("train_fg"), exists("test_fg"), exists("train_game_ids"),
+          exists("PAT_master"), exists("NON_master"), exists("m1_formula"),
+          exists("experiment_grid"), exists("sel_vars"), exists("baseline_metrics"))
+
+# Define the output directory for this experiment's results
+output_dir <- "G:/My files/Python/Sports Analytics Projects/Football/Kickers/NFL-Field-Goal-Kicker-Model/reports/xfg_success/cv_aug_fg_B"
+if (!dir.exists(output_dir)) {
+  dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+}
+
+# Container for all results
+all_results <- list(baseline_metrics)
+
+# Define a more robust optimizer control to help with convergence
+ctrl <- glmmTMB::glmmTMBControl(optimizer = optim, optArgs = list(method = "BFGS"))
+
+for (i in 1:nrow(experiment_grid)) {
+  # Initialize variant-specific variables
+  cfg <- NULL
+  vid <- "unknown"
+  
+  tryCatch({
+    cfg <- experiment_grid[i, ]
+    vid <- cfg$variant_id
+    cat(sprintf("\\n--- Running Variant: %s ---\\n", vid))
+
+    # 1. Prepare PAT augmentation data (from training games only)
+    train_pats <- PAT_master %>%
+      dplyr::filter(game_id %in% train_game_ids) %>%
+      dplyr::select(dplyr::any_of(sel_vars)) %>%
+      dplyr::mutate(obs_weight = cfg$w_pat)
+
+    # 2. Prepare NON augmentation data (from training games only)
+    train_non <- if (isTRUE(cfg$include_non)) {
+      NON_master %>%
+        dplyr::filter(
+          game_id %in% train_game_ids,
+          p_hat_attempt_clipped >= cfg$non_pi_cutoff
+        ) %>%
+        dplyr::select(dplyr::any_of(c(sel_vars, "xfg_pred")))
+    } else {
+      tibble::tibble() # Empty tibble if not including NON
+    }
+
+      # Assign weights to NON attempts
+    if (nrow(train_non) > 0) {
+      if (cfg$w_non_type == "fixed") {
+        train_non$obs_weight <- 0.1 
+      } else if (cfg$w_non_type == "pred_xfg") {
+        train_non$obs_weight <- train_non$xfg_pred
+      }
+    }
+
+    # 3. Combine training data
+    train_fg_w <- train_fg %>% dplyr::select(dplyr::any_of(sel_vars)) %>% dplyr::mutate(obs_weight = 1.0)
+
+    train_aug <- dplyr::bind_rows(
+      train_fg_w,
+      train_pats,
+      train_non %>% dplyr::select(dplyr::any_of(names(train_fg_w)))
+    ) %>% dplyr::filter(!is.na(obs_weight), obs_weight > 1e-6)
+
+    cat(sprintf("Augmented training set: %d FG, %d PAT, %d NON. Total = %d\\n",
+                nrow(train_fg_w), nrow(train_pats), nrow(train_non), nrow(train_aug)))
+
+    # 4. Pool sparse kickers to improve model stability
+    pooled_data <- pool_sparse_levels(train_aug, test_fg, id_col = "kicker_player_id", min_n = 5L)
+    train_pooled <- pooled_data$train
+    test_pooled  <- pooled_data$test
+
+    # 5. Fit augmented model with logit link and robust optimizer
+    fit_aug <- glmmTMB::glmmTMB(m1_formula, data = train_pooled, family = binomial(link = "logit"), weights = obs_weight, control = ctrl)
+
+    if (is.null(fit_aug)) {
+      # This case might be redundant with the outer tryCatch but is good practice
+      stop("Model fitting returned NULL without throwing an error.")
+    }
+
+    # 6. Evaluate and store results
+    p_aug <- predict_safe(fit_aug, test_pooled)
+    aug_metrics <- tibble::tibble(
+      variant = vid,
+      auc = auc(test_pooled$kick_made, p_aug),
+      brier = brier(test_pooled$kick_made, p_aug),
+      logloss = logloss(test_pooled$kick_made, p_aug)
+    )
+    all_results[[length(all_results) + 1]] <- aug_metrics
+
+  }, error = function(e) {
+    # This block executes if any error occurs inside the tryCatch
+    cat(sprintf("\\n\\n*** ERROR in variant: %s ***\\n", vid))
+    cat("Error message:", conditionMessage(e), "\\n")
+    cat("The loop will continue, but this variant's results will be NA.\\n\\n")
+    
+    # Store NA results for the failed variant to keep the output table complete
+    failed_metrics <- tibble::tibble(
+      variant = vid,
+      auc = NA_real_,
+      brier = NA_real_,
+      logloss = NA_real_
+    )
+    all_results[[length(all_results) + 1]] <- failed_metrics
+  })
+}
+
+# --- Final Comparison ---
+final_comparison <- dplyr::bind_rows(all_results) %>%
+  dplyr::mutate(
+      auc_delta = auc - baseline_metrics$auc,
+      brier_delta = brier - baseline_metrics$brier,
+      logloss_delta = logloss - baseline_metrics$logloss
+  ) %>%
+  dplyr::arrange(dplyr::desc(auc_delta))
+
+cat("\\n--- Final Comparison vs. Baseline ---\\n")
+print(final_comparison)
+
+# Save results to the specified directory
+output_file_path <- file.path(output_dir, "augmentation_experiment_summary.csv")
+readr::write_csv(final_comparison, output_file_path)
+cat(sprintf("\\nSaved summary to %s\\n", output_file_path))
+
+Error:
+--- TEST MODE ENABLED ---
+Running only the final variant for a quick pipeline check.
+
+--- Running Variant: pat0.5_nonXFG_pi25 ---
+Using pre-built dataset | FG=8311, PAT=9861, NON=2058; Total effective weight=1494293.0
+Warning message in doTryCatch(return(expr), name, parentenv, handler):
+"All predictions are NA for variant 'pat0.5_nonXFG_pi25'; likely due to model or data issues."
+Variant pat0.5_nonXFG_pi25 completed in 38.59 seconds.
+
+--- Final Comparison vs. Baseline ---
+[90m# A tibble: 2 × 7[39m
+  variant               auc    brier logloss auc_delta brier_delta logloss_delta
+  [3m[90m<chr>[39m[23m               [3m[90m<dbl>[39m[23m    [3m[90m<dbl>[39m[23m   [3m[90m<dbl>[39m[23m     [3m[90m<dbl>[39m[23m       [3m[90m<dbl>[39m[23m         [3m[90m<dbl>[39m[23m
+[90m1[39m baseline_fg_only    0.774   0.095[4m7[24m   0.319         0           0             0
+[90m2[39m pat0.5_nonXFG_pi25 [31mNA[39m     [31mNaN[39m      [31mNaN[39m            [31mNA[39m         [31mNaN[39m           [31mNaN[39m
+
+Saved summary to G:/My files/Python/Sports Analytics Projects/Football/Kickers/NFL-Field-Goal-Kicker-Model/reports/xfg_success/cv_aug_fg_B/augmentation_experiment_summary.csv
+
+Expected behavior:
+Run an experiment of a variant adding PAT and NON attempts to the FG train data to predict FG test data.
+To see if augmenting data improves prediction.
+
+Notes:
+Using most recent uploaded version.
+It should report the reason for returning NA but does not.

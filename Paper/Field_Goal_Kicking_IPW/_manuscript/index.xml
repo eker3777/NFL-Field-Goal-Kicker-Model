@@ -1,0 +1,534 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!DOCTYPE article PUBLIC "-//NLM//DTD JATS (Z39.96) Journal Archiving
+and Interchange DTD v1.2 20190208//EN" "JATS-archivearticle1.dtd">
+
+<article xmlns:mml="http://www.w3.org/1998/Math/MathML" xmlns:xlink="http://www.w3.org/1999/xlink" dtd-version="1.2" article-type="other">
+
+<front>
+
+
+<article-meta>
+
+
+<title-group>
+<article-title>Strategy vs. Confidence: Selection Bias in NFL Field Goal
+Modeling</article-title>
+</title-group>
+
+<contrib-group>
+<contrib contrib-type="author" corresp="yes">
+<name>
+<surname>Kervin</surname>
+<given-names>Elliott</given-names>
+</name>
+<string-name>Elliott Kervin</string-name>
+
+<role vocab="https://credit.niso.org" vocab-term="writing – original
+draft" vocab-term-identifier="https://credit.niso.org/contributor-roles/writing-original-draft/">writing</role>
+<xref ref-type="aff" rid="aff-1">a</xref>
+<xref ref-type="corresp" rid="cor-1">&#x002A;</xref>
+</contrib>
+<contrib contrib-type="author">
+<name>
+<surname>Schuckers</surname>
+<given-names>Dr. Michael</given-names>
+</name>
+<string-name>Dr. Michael Schuckers</string-name>
+
+<role vocab="https://credit.niso.org" vocab-term="writing – original
+draft" vocab-term-identifier="https://credit.niso.org/contributor-roles/writing-original-draft/">writing</role>
+<xref ref-type="aff" rid="aff-1">a</xref>
+</contrib>
+</contrib-group>
+<aff id="aff-1">
+<institution-wrap>
+<institution>The University of North Carolina at Charlotte</institution>
+</institution-wrap>
+
+
+
+
+
+
+
+</aff>
+<author-notes>
+<corresp id="cor-1"></corresp>
+</author-notes>
+
+
+
+
+
+
+
+
+
+<history></history>
+
+
+<kwd-group kwd-group-type="author">
+<kwd>nfl analytics</kwd>
+<kwd>field goals</kwd>
+<kwd>selection bias</kwd>
+<kwd>inverse probability weighting</kwd>
+<kwd>mixed effects models</kwd>
+</kwd-group>
+
+
+
+
+</article-meta>
+
+</front>
+
+<body>
+<sec id="abstract">
+  <title>Abstract</title>
+  <p>NFL field goal outcomes are observed under a selective decision
+  process: coaches choose when a kick is attempted, and that selection
+  mechanism can bias kicker evaluation and probability calibration. This
+  study compares three model classes on 2015-2024 NFL kickable states: a
+  baseline success model trained on observed attempts (M1), an inverse
+  probability weighted variant using attempt propensity scores (M2), and
+  an augmented pseudo-label robustness variant (M3). The attempt
+  propensity model is strong across seasons (AUC approximately
+  0.94-0.96), indicating that coaching behavior is predictable from game
+  state. In-sample, M2 improves fit relative to M1 (Brier 0.0985 vs
+  0.1005), but out-of-sample predictive performance remains strongest
+  for M1 (global test Brier 0.0975 and AUC 0.7719, versus M2 Brier
+  0.1001 and AUC 0.7596). M3 shifts long-range calibration in the
+  expected direction (50+ mean probability approximately 0.646 versus
+  baseline approximately 0.676), but does not improve predictive
+  performance and is treated as exploratory. The practical
+  recommendation is to keep M1 as the predictive benchmark, use M2 as
+  the primary correction attempt for selection bias diagnostics, and
+  position M3 as a secondary robustness lens for tail-behavior
+  interpretation.</p>
+</sec>
+<sec id="introduction">
+  <title>1. Introduction</title>
+  <sec id="motivation-selection-bias-in-kicker-evaluation">
+    <title>1.1 Motivation: Selection Bias in Kicker Evaluation</title>
+    <p>Field goal modeling is not only a shot-making problem. It is also
+    a selection problem. The observed dataset contains kicks that
+    coaches chose to attempt, while many kickable fourth-down situations
+    are censored by strategic alternatives such as punts or offensive
+    plays. If this selection is ignored, model-based kicker evaluation
+    can inherit survivorship bias: probabilities appear better
+    calibrated than they are in the full decision space, and
+    long-distance performance can be overstated.</p>
+    <p>This project investigates whether explicit modeling of the
+    attempt decision improves estimation of field goal success
+    probabilities and, ultimately, kicker evaluation. The core tension
+    is practical and methodological: correcting selection bias can
+    improve descriptive fit in difficult states while still failing to
+    improve out-of-sample prediction.</p>
+  </sec>
+  <sec id="project-objective-and-research-questions">
+    <title>1.2 Project Objective and Research Questions</title>
+    <p>The primary objective is to quantify how much predictive and
+    evaluative behavior changes when attempt selection is modeled
+    explicitly.</p>
+    <p>Research questions:</p>
+    <list list-type="order">
+      <list-item>
+        <p>Does inverse probability weighting of observed attempts (M2)
+        improve predictive accuracy relative to an unweighted baseline
+        mixed model (M1)?</p>
+      </list-item>
+      <list-item>
+        <p>Do pseudo-labeled non-attempt augmentations (M3) improve
+        calibration in long-distance tails, and at what predictive
+        cost?</p>
+      </list-item>
+      <list-item>
+        <p>Is the coaching attempt mechanism sufficiently structured to
+        support a propensity-based correction framework?</p>
+      </list-item>
+    </list>
+    <p>Working hypotheses:</p>
+    <list list-type="order">
+      <list-item>
+        <p>The attempt propensity model will be strongly predictive of
+        observed kick decisions.</p>
+      </list-item>
+      <list-item>
+        <p>M2 will improve in-sample fit by reweighting under-observed
+        difficult attempts.</p>
+      </list-item>
+      <list-item>
+        <p>M1 will remain the strongest out-of-sample predictive
+        model.</p>
+      </list-item>
+      <list-item>
+        <p>M3 will provide directional calibration insight in the tail,
+        but not predictive gains.</p>
+      </list-item>
+    </list>
+  </sec>
+  <sec id="modeling-frame">
+    <title>1.3 Modeling Frame</title>
+    <p>The manuscript uses a pi-first selection framework. Let
+    <inline-formula><alternatives>
+    <tex-math><![CDATA[A_i]]></tex-math>
+    <mml:math display="inline" xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:msub><mml:mi>A</mml:mi><mml:mi>i</mml:mi></mml:msub></mml:math></alternatives></inline-formula>
+    denote whether a kick is attempted and
+    <inline-formula><alternatives>
+    <tex-math><![CDATA[Y_i]]></tex-math>
+    <mml:math display="inline" xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:msub><mml:mi>Y</mml:mi><mml:mi>i</mml:mi></mml:msub></mml:math></alternatives></inline-formula>
+    denote kick success when attempted. The decision process is modeled
+    by <inline-formula><alternatives>
+    <tex-math><![CDATA[\hat{\pi}(X_i)=P(A_i=1\mid X_i)]]></tex-math>
+    <mml:math display="inline" xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:mrow><mml:mover><mml:mi>π</mml:mi><mml:mo accent="true">̂</mml:mo></mml:mover><mml:mo stretchy="false" form="prefix">(</mml:mo><mml:msub><mml:mi>X</mml:mi><mml:mi>i</mml:mi></mml:msub><mml:mo stretchy="false" form="postfix">)</mml:mo><mml:mo>=</mml:mo><mml:mi>P</mml:mi><mml:mo stretchy="false" form="prefix">(</mml:mo><mml:msub><mml:mi>A</mml:mi><mml:mi>i</mml:mi></mml:msub><mml:mo>=</mml:mo><mml:mn>1</mml:mn><mml:mo>∣</mml:mo><mml:msub><mml:mi>X</mml:mi><mml:mi>i</mml:mi></mml:msub><mml:mo stretchy="false" form="postfix">)</mml:mo></mml:mrow></mml:math></alternatives></inline-formula>
+    over kickable game states. Success models are then compared under
+    three training strategies:</p>
+    <list list-type="order">
+      <list-item>
+        <p>M1 baseline mixed model on observed attempts.</p>
+      </list-item>
+      <list-item>
+        <p>M2 weighted mixed model using stabilized and clipped inverse
+        propensity weights.</p>
+      </list-item>
+      <list-item>
+        <p>M3 exploratory augmented training with conservative
+        pseudo-label influence.</p>
+      </list-item>
+    </list>
+    <p>This structure separates predictive benchmarking from
+    bias-correction diagnostics.</p>
+  </sec>
+  <sec id="preview-of-findings">
+    <title>1.4 Preview of Findings</title>
+    <p>Current evidence from the project artifacts supports the
+    following high-level summary:</p>
+    <list list-type="order">
+      <list-item>
+        <p>Attempt propensity is stable and highly predictive across
+        seasons.</p>
+      </list-item>
+      <list-item>
+        <p>M2 improves in-sample fit but does not outperform M1 on
+        held-out prediction.</p>
+      </list-item>
+      <list-item>
+        <p>M3 alters long-distance calibration behavior but degrades
+        predictive metrics versus M1, and therefore remains
+        exploratory.</p>
+      </list-item>
+    </list>
+    <p>These findings motivate a two-layer interpretation: M1 as
+    predictive benchmark, M2 as main selection-bias correction attempt,
+    and M3 as secondary robustness analysis.</p>
+  </sec>
+  <sec id="paper-roadmap">
+    <title>1.5 Paper Roadmap</title>
+    <p>Section 2 defines data scope, feature engineering, and the
+    attempt propensity workflow. Section 3 specifies M1-M3 model
+    architecture and evaluation metrics. Section 4 reports results in
+    predictive-first order. Section 5 discusses interpretation and
+    deployment implications. Section 6 addresses limitations. Section 7
+    concludes.</p>
+  </sec>
+</sec>
+<sec id="data-and-pipeline">
+  <title>2. Data and Pipeline</title>
+  <sec id="data-universe">
+    <title>2.1 Data Universe</title>
+    <p>Planned content:</p>
+    <list list-type="order">
+      <list-item>
+        <p>Seasons, play filters, and kickable-state definition.</p>
+      </list-item>
+      <list-item>
+        <p>Treatment of PATs and blocked attempts.</p>
+      </list-item>
+      <list-item>
+        <p>Train/test and rolling-origin framing.</p>
+      </list-item>
+    </list>
+  </sec>
+  <sec id="feature-engineering">
+    <title>2.2 Feature Engineering</title>
+    <p>Planned content:</p>
+    <list list-type="order">
+      <list-item>
+        <p>Distance splines and geometric covariates.</p>
+      </list-item>
+      <list-item>
+        <p>Weather and venue normalization.</p>
+      </list-item>
+      <list-item>
+        <p>Context features (time, score, leverage, game state).</p>
+      </list-item>
+    </list>
+  </sec>
+  <sec id="attempt-propensity-model">
+    <title>2.3 Attempt Propensity Model</title>
+    <p>Planned content:</p>
+    <list list-type="order">
+      <list-item>
+        <p>Multinomial decision model setup (kick vs alternatives).</p>
+      </list-item>
+      <list-item>
+        <p>Rolling-origin out-of-fold generation.</p>
+      </list-item>
+      <list-item>
+        <p>Calibration and effective sample size diagnostics.</p>
+      </list-item>
+    </list>
+  </sec>
+</sec>
+<sec id="methods">
+  <title>3. Methods</title>
+  <sec id="success-models">
+    <title>3.1 Success Models</title>
+    <p>Planned content:</p>
+    <list list-type="order">
+      <list-item>
+        <p>M1 baseline mixed model specification.</p>
+      </list-item>
+      <list-item>
+        <p>M2 IPW-weighted specification and clipping/stabilization.</p>
+      </list-item>
+      <list-item>
+        <p>M3 exploratory pseudo-label variants and guardrails.</p>
+      </list-item>
+    </list>
+  </sec>
+  <sec id="estimands-and-evaluation-metrics">
+    <title>3.2 Estimands and Evaluation Metrics</title>
+    <p>Planned content:</p>
+    <list list-type="order">
+      <list-item>
+        <p>Predictive metrics: Brier, log loss, AUC, threshold
+        metrics.</p>
+      </list-item>
+      <list-item>
+        <p>Calibration diagnostics by distance and game context.</p>
+      </list-item>
+      <list-item>
+        <p>In-sample versus out-of-sample claim policy.</p>
+      </list-item>
+    </list>
+  </sec>
+  <sec id="inference-and-robustness-policy">
+    <title>3.3 Inference and Robustness Policy</title>
+    <p>Planned content:</p>
+    <list list-type="order">
+      <list-item>
+        <p>Why M3 is classified as exploratory.</p>
+      </list-item>
+      <list-item>
+        <p>Criteria for claiming predictive improvement.</p>
+      </list-item>
+      <list-item>
+        <p>Tail-only interpretive diagnostics.</p>
+      </list-item>
+    </list>
+  </sec>
+</sec>
+<sec id="results">
+  <title>4. Results</title>
+  <sec id="attempt-selection-structure">
+    <title>4.1 Attempt Selection Structure</title>
+    <p>Planned content:</p>
+    <list list-type="order">
+      <list-item>
+        <p>Propensity model strength by season.</p>
+      </list-item>
+      <list-item>
+        <p>Rationality and overlap diagnostics.</p>
+      </list-item>
+      <list-item>
+        <p>Strategic decision frontier context.</p>
+      </list-item>
+    </list>
+  </sec>
+  <sec id="predictive-benchmark-m1-vs-m2">
+    <title>4.2 Predictive Benchmark: M1 vs M2</title>
+    <p>Planned content:</p>
+    <list list-type="order">
+      <list-item>
+        <p>In-sample fit comparison (M2 advantage).</p>
+      </list-item>
+      <list-item>
+        <p>Held-out global and 50+ comparison (M1 advantage).</p>
+      </list-item>
+      <list-item>
+        <p>Interpretation of the correction-versus-prediction
+        tradeoff.</p>
+      </list-item>
+    </list>
+  </sec>
+  <sec id="exploratory-robustness-m3">
+    <title>4.3 Exploratory Robustness: M3</title>
+    <p>Planned content:</p>
+    <list list-type="order">
+      <list-item>
+        <p>Pseudo-label design grid and weighting sensitivity.</p>
+      </list-item>
+      <list-item>
+        <p>Evidence that predictive metrics do not improve over M1.</p>
+      </list-item>
+      <list-item>
+        <p>Why M3 remains a secondary analysis.</p>
+      </list-item>
+    </list>
+  </sec>
+  <sec id="distance-tail-diagnostics">
+    <title>4.4 Distance-Tail Diagnostics</title>
+    <p>Planned content:</p>
+    <list list-type="order">
+      <list-item>
+        <p>45-55 yard behavior and optimism/pessimism framing.</p>
+      </list-item>
+      <list-item>
+        <p>50+ calibration shift and tail probability
+        interpretation.</p>
+      </list-item>
+      <list-item>
+        <p>Relation to workload and high-weight attempt profiles.</p>
+      </list-item>
+    </list>
+  </sec>
+  <sec id="figures-and-tables-planned">
+    <title>4.5 Figures and Tables (Planned)</title>
+    <p>Planned figure/table map:</p>
+    <list list-type="order">
+      <list-item>
+        <p>Propensity overlap and calibration diagnostics.</p>
+      </list-item>
+      <list-item>
+        <p>M1 vs M2 predictive comparison table (global and 50+).</p>
+      </list-item>
+      <list-item>
+        <p>M3 variant summary table and tail comparison.</p>
+      </list-item>
+      <list-item>
+        <p>Truth/bias curves and distribution overlays.</p>
+      </list-item>
+    </list>
+  </sec>
+</sec>
+<sec id="discussion">
+  <title>5. Discussion</title>
+  <sec id="what-the-models-learn">
+    <title>5.1 What the Models Learn</title>
+    <p>Planned content:</p>
+    <list list-type="order">
+      <list-item>
+        <p>M1 as strongest predictive benchmark.</p>
+      </list-item>
+      <list-item>
+        <p>M2 as principled correction attempt that improves fit but not
+        test prediction.</p>
+      </list-item>
+      <list-item>
+        <p>M3 as exploratory calibration lens rather than production
+        predictor.</p>
+      </list-item>
+    </list>
+  </sec>
+  <sec id="operational-implications">
+    <title>5.2 Operational Implications</title>
+    <p>Planned content:</p>
+    <list list-type="order">
+      <list-item>
+        <p>Forecasting and decision-support recommendations.</p>
+      </list-item>
+      <list-item>
+        <p>Kicker evaluation and communication strategy.</p>
+      </list-item>
+      <list-item>
+        <p>How to report correction-aware diagnostics without
+        overstating performance gains.</p>
+      </list-item>
+    </list>
+  </sec>
+  <sec id="why-corrective-models-may-not-win-prediction">
+    <title>5.3 Why Corrective Models May Not Win Prediction</title>
+    <p>Planned content:</p>
+    <list list-type="order">
+      <list-item>
+        <p>Distribution shift and season-to-season strategy change.</p>
+      </list-item>
+      <list-item>
+        <p>Weight-variance and tail sample constraints.</p>
+      </list-item>
+      <list-item>
+        <p>Missing covariates and residual confounding.</p>
+      </list-item>
+    </list>
+  </sec>
+</sec>
+<sec id="limitations">
+  <title>6. Limitations</title>
+  <p>Planned content:</p>
+  <list list-type="order">
+    <list-item>
+      <p>Observational design and non-causal interpretation.</p>
+    </list-item>
+    <list-item>
+      <p>Sensitivity to pseudo-label rules and weighting choices.</p>
+    </list-item>
+    <list-item>
+      <p>Sparse extreme-distance regimes and uncertainty inflation.</p>
+    </list-item>
+  </list>
+</sec>
+<sec id="conclusion">
+  <title>7. Conclusion</title>
+  <p>Planned content:</p>
+  <list list-type="order">
+    <list-item>
+      <p>Final statement on predictive ranking (M1 first).</p>
+    </list-item>
+    <list-item>
+      <p>Role of M2 as best correction attempt for selection bias
+      diagnostics.</p>
+    </list-item>
+    <list-item>
+      <p>Role of M3 as exploratory robustness only.</p>
+    </list-item>
+    <list-item>
+      <p>Next-step roadmap for expanded validation and manuscript
+      submission.</p>
+    </list-item>
+  </list>
+</sec>
+<sec id="appendix-a.-artifact-to-section-mapping">
+  <title>Appendix A. Artifact-to-Section Mapping</title>
+  <p>This manuscript section will map each reported figure and table to
+  source artifacts in the reports and notebooks directories, including
+  exact file names used to generate each displayed result.</p>
+</sec>
+<sec id="appendix-b.-citation-backlog">
+  <title>Appendix B. Citation Backlog</title>
+  <p>The current bibliography is a placeholder. Before submission, add
+  core references for:</p>
+  <list list-type="order">
+    <list-item>
+      <p>Selection bias and inverse probability weighting.</p>
+    </list-item>
+    <list-item>
+      <p>AIPW and doubly robust evaluation.</p>
+    </list-item>
+    <list-item>
+      <p>Sports expected-value modeling and NFL decision analytics.</p>
+    </list-item>
+    <list-item>
+      <p>Mixed-effects modeling references for hierarchical binary
+      outcomes.</p>
+    </list-item>
+  </list>
+</sec>
+</body>
+
+<back>
+</back>
+
+
+
+</article>

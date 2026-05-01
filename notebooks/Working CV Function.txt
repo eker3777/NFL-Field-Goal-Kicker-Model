@@ -1,0 +1,293 @@
+run_xfg_cv <- function(
+  fg_B, base_formula,
+  use_cf = FALSE,
+  link   = c("cloglog","logit"),
+  min_kicker_plays = 5L,
+  use_weight_cap = TRUE,   # <-- now in signature
+  cap_q = 0.99,            # <-- now in signature
+  abort_on_error = TRUE
+) {
+  link <- match.arg(link)
+  stopifnot("fold" %in% names(fg_B))
+  stopifnot(
+  all(fg_B$kick_made %in% c(0L,1L)),
+  "weight_multinom_hajek" %in% names(fg_B),
+  is.numeric(fg_B$weight_multinom_hajek)
+  )
+  # clip odds of attempt if you auto-create CF term
+  if (use_cf && !"logit_pi_c" %in% names(fg_B) && "p_hat_attempt_clipped" %in% names(fg_B)) {
+  stopifnot(is.numeric(fg_B$p_hat_attempt_clipped))
+  }
+
+  K <- max(fg_B$fold, na.rm = TRUE)
+
+  # strict binary globally
+  fg_B$kick_made <- assert_binary01(fg_B$kick_made, "kick_made")
+
+  # (optional) if CF requested, ensure logit_pi_c exists
+  if (use_cf && !("logit_pi_c" %in% names(fg_B)) && ("p_hat_attempt_clipped" %in% names(fg_B))) {
+    ph <- as.numeric(fg_B$p_hat_attempt_clipped)
+    ph[!is.finite(ph) | is.na(ph)] <- 0.5  # neutral default when missing
+    p <- pmin(pmax(ph, 1e-6), 1 - 1e-6)
+    fg_B$logit_pi_c <- qlogis(p)
+  } else if (use_cf && !("logit_pi_c" %in% names(fg_B))) {
+    stop("use_cf=TRUE but logit_pi_c and p_hat_attempt_clipped are missing.", call.=FALSE)
+  }
+
+  model_formula <- build_formula(base_formula, use_cf = use_cf)
+  fam <- binomial(link = link)
+  ctrl <- glmmTMB::glmmTMBControl(optimizer = optim, optArgs = list(method = "BFGS"))
+
+  oof_m1 <- vector("list", K); oof_m2 <- vector("list", K)
+  fold_metrics_m1 <- vector("list", K); fold_metrics_m2 <- vector("list", K)
+
+  for (k in seq_len(K)) {
+    train_df <- fg_B[fg_B$fold != k, , drop = FALSE]
+    test_df  <- fg_B[fg_B$fold == k, , drop = FALSE]
+
+    # per-fold paranoid binary check
+    train_df$kick_made <- assert_binary01(train_df$kick_made, "kick_made(train)")
+    test_df$kick_made  <- assert_binary01(test_df$kick_made,  "kick_made(test)")
+
+    # pool sparse kickers
+    pooled <- pool_sparse_levels(train_df, test_df, id_col = "kicker_player_id",
+                                 min_n = min_kicker_plays, repl = "REPL")
+    train_df <- pooled$train; test_df <- pooled$test
+
+    # M1: unweighted
+    fit_m1_k <- fit_or_abort(
+      glmmTMB::glmmTMB(model_formula, data = train_df, family = fam, control = ctrl),
+      sprintf("M1 fold %d fit", k), abort_on_error
+    )
+    p_m1 <- predict_or_abort(fit_m1_k, test_df, sprintf("M1 fold %d", k), abort_on_error)
+
+    # M2: IPW only if valid weights; use COLUMN weights; optional cap
+    w_train <- validate_weights(train_df, "weight_multinom_hajek")
+    if (is.null(w_train)) {
+      stop(sprintf("[M2 fold %d] invalid/missing weight_multinom_hajek; aborting CV.", k), call. = FALSE)
+    }
+    if (use_weight_cap) w_train <- cap_weights(w_train, q = cap_q)
+    train_df$w_hajek <- as.numeric(w_train)
+    test_df$w_hajek  <- 1
+
+    fit_m2_k <- fit_or_abort(
+      glmmTMB::glmmTMB(model_formula, data = train_df, family = fam, weights = w_hajek, control = ctrl),
+      sprintf("M2 fold %d fit", k), abort_on_error
+    )
+    p_m2 <- predict_or_abort(fit_m2_k, test_df, sprintf("M2 fold %d", k), abort_on_error)
+
+    # store (guard kick_distance)
+    kd <- if ("kick_distance" %in% names(test_df)) test_df$kick_distance else NA_real_
+    oof_m1[[k]] <- tibble::tibble(idx = which(fg_B$fold == k), fold = k, y = test_df$kick_made,
+                                  p = as.numeric(p_m1), kick_distance = kd)
+    oof_m2[[k]] <- tibble::tibble(idx = which(fg_B$fold == k), fold = k, y = test_df$kick_made,
+                                  p = as.numeric(p_m2), kick_distance = kd)
+
+    fold_metrics_m1[[k]] <- tibble::tibble(fold = k, n = nrow(test_df),
+                                           auc = safe_auc(test_df$kick_made, p_m1),
+                                           brier = safe_brier(test_df$kick_made, p_m1),
+                                           logloss = safe_logloss(test_df$kick_made, p_m1))
+    fold_metrics_m2[[k]] <- tibble::tibble(fold = k, n = nrow(test_df),
+                                           auc = safe_auc(test_df$kick_made, p_m2),
+                                           brier = safe_brier(test_df$kick_made, p_m2),
+                                           logloss = safe_logloss(test_df$kick_made, p_m2))
+  }
+
+  oof_m1_df <- dplyr::bind_rows(oof_m1); oof_m2_df <- dplyr::bind_rows(oof_m2)
+  fold_metrics_m1_df <- dplyr::bind_rows(fold_metrics_m1); fold_metrics_m2_df <- dplyr::bind_rows(fold_metrics_m2)
+
+  overall_m1 <- tibble::tibble(
+    model = sprintf("M1_%s_cf_%s_minK%d", link, ifelse(use_cf,"on","off"), min_kicker_plays),
+    n = sum(is.finite(oof_m1_df$p) & !is.na(oof_m1_df$y)),
+    auc = safe_auc(oof_m1_df$y, oof_m1_df$p),
+    brier = safe_brier(oof_m1_df$y, oof_m1_df$p),
+    logloss = safe_logloss(oof_m1_df$y, oof_m1_df$p)
+  )
+  overall_m2 <- tibble::tibble(
+    model = sprintf("M2_ipw_%s_cf_%s_minK%d_cap%s@%.2f",
+                    link, ifelse(use_cf,"on","off"), min_kicker_plays,
+                    ifelse(use_weight_cap,"Y","N"), cap_q),
+    n = sum(is.finite(oof_m2_df$p) & !is.na(oof_m2_df$y)),
+    auc = safe_auc(oof_m2_df$y, oof_m2_df$p),
+    brier = safe_brier(oof_m2_df$y, oof_m2_df$p),
+    logloss = safe_logloss(oof_m2_df$y, oof_m2_df$p)
+  )
+
+# Output dirs
+reports_xfg_cv_dir <- "G:/My files/Python/Sports Analytics Projects/Football/Kickers/NFL-Field-Goal-Kicker-Model/reports/xfg_success/cv_fg_B"
+if (!dir.exists(reports_xfg_cv_dir)) dir.create(reports_xfg_cv_dir, recursive = TRUE)
+reports_xfg_cv_fig_dir <- "G:/My files/Python/Sports Analytics Projects/Football/Kickers/NFL-Field-Goal-Kicker-Model/reports/xfg_success/cv_fg_B/figs"
+if (!dir.exists(reports_xfg_cv_fig_dir)) dir.create(reports_xfg_cv_fig_dir, recursive = TRUE)
+  # calibration (OOF)
+  calib_breaks <- c(seq(15, 70, by = 5), 70 + 1e-9)
+  calib_m1 <- oof_m1_df |>
+    dplyr::mutate(dist_bin = cut(kick_distance, breaks = calib_breaks, include.lowest = TRUE, right = FALSE)) |>
+    dplyr::group_by(dist_bin) |>
+    dplyr::summarise(n = dplyr::n(), obs = mean(y, na.rm = TRUE), est = mean(p, na.rm = TRUE), .groups = "drop")
+  calib_m2 <- oof_m2_df |>
+    dplyr::mutate(dist_bin = cut(kick_distance, breaks = calib_breaks, include.lowest = TRUE, right = FALSE)) |>
+    dplyr::group_by(dist_bin) |>
+    dplyr::summarise(n = dplyr::n(), obs = mean(y, na.rm = TRUE), est = mean(p, na.rm = TRUE), .groups = "drop")
+
+  # Persist artifacts
+  readr::write_csv(fold_metrics_m1_df, file.path(reports_xfg_cv_dir, "m1_no_cf_fg_B_cv_fold_metrics.csv"))
+  readr::write_csv(overall_m1,           file.path(reports_xfg_cv_dir, "m1_no_cf_fg_B_cv_overall_metrics.csv"))
+  readr::write_csv(calib_m1,             file.path(reports_xfg_cv_dir, "m1_no_cf_fg_B_cv_calibration_by_distance.csv"))
+  readr::write_csv(oof_m1_df,            file.path(reports_xfg_cv_dir, "m1_no_cf_fg_B_cv_oof_predictions.csv"))
+
+  m2_suffix <- if (use_cf) "_cf" else "_no_cf"
+  readr::write_csv(fold_metrics_m2_df, file.path(reports_xfg_cv_dir, sprintf("m2%s_fg_B_cv_fold_metrics.csv", m2_suffix)))
+  readr::write_csv(overall_m2,          file.path(reports_xfg_cv_dir, sprintf("m2%s_fg_B_cv_overall_metrics.csv", m2_suffix)))
+  readr::write_csv(calib_m2,            file.path(reports_xfg_cv_dir, sprintf("m2%s_fg_B_cv_calibration_by_distance.csv", m2_suffix)))
+  readr::write_csv(oof_m2_df,           file.path(reports_xfg_cv_dir, sprintf("m2%s_fg_B_cv_oof_predictions.csv", m2_suffix)))
+
+  # Plots
+  p_m1_cv <- plot_cal_cv(calib_m1, "xFG calibration by distance (M1 no CF, CV fg_B)")
+  p_m2_cv <- plot_cal_cv(calib_m2, sprintf("xFG calibration by distance (M2%s, CV fg_B)", if (use_cf) " CF" else " no CF"))
+  suppressWarnings(ggplot2::ggsave(file.path(reports_xfg_cv_fig_dir, "xfg_calibration_distance_m1_no_cf_cv_fg_B.png"), p_m1_cv, width = 11, height = 6, dpi = 300))
+  suppressWarnings(ggplot2::ggsave(file.path(reports_xfg_cv_fig_dir, sprintf("xfg_calibration_distance_m2%s_cv_fg_B.png", m2_suffix)), p_m2_cv, width = 11, height = 6, dpi = 300))
+
+  # Console summary
+  cat(sprintf("CV results comparing M1_no_cf (unweighted) vs M2%s (IPW) on fg_B\n\n", if (use_cf) "_cf" else "_no_cf"))
+  cat("Overall M1_no_cf:\n"); print(overall_m1)
+  cat(sprintf("\nOverall M2%s (IPW):\n", if (use_cf) "_cf" else "_no_cf")); print(overall_m2)
+
+  invisible(list(
+    m1_no_cf = list( folds = fold_metrics_m1_df, overall = overall_m1, calib = calib_m1),
+    m2 = list( folds = fold_metrics_m2_df, overall = overall_m2, calib = calib_m2)
+  ))
+}
+
+set.seed(20240517)
+K <- 5
+dummy_gid <- as.factor(fg_B$game_id)
+dummy_gid_levels <- levels(dummy_gid)
+dummy_fold_map <- setNames(sample(rep(1:K, length.out = length(dummy_gid_levels))), dummy_gid_levels)
+dummy_foldid <- as.integer(dummy_fold_map[as.character(dummy_gid)])
+
+one_fold <- 1L
+train <- subset(fg_B, dummy_foldid != one_fold)
+test  <- subset(fg_B, dummy_foldid == one_fold)
+
+head(train)
+
+fit_m2_fg <- function(df, form) {
+  args <- list(formula = form, data = df, family = binomial("logit"))
+  if ("weight_multinom_hajek" %in% names(df)) {
+    args$weights <- as.name("weight_multinom_hajek")  # <- key change
+  }
+  do.call(glmmTMB::glmmTMB, args)
+}
+
+fit  <- fit_m2_fg(train, m1_formula)  # your formula object
+# If you have old fits that still expect .w, uncomment next line:
+# test$.w <- 1
+
+.pred    <- predict(fit, newdata = test, type = "response",
+                allow.new.levels = TRUE, na.action = na.pass)
+
+# sanity check
+stopifnot(length(.pred) == nrow(test) && all(is.finite(p[is.finite(test$dist_bs_1)])))
+
+#Show results
+head(data.frame(kick_made = test$kick_made, kick_distance = test$kick_distance, .pred = .pred))
+
+#Show metrics and calibration
+metrics <- make_metrics(data.frame(kick_made = test$kick_made, kick_distance = test$kick_distance, .pred = .pred), model_name = "m2_fg_B_logit_one_fold")
+print(metrics)
+
+Warning message in eval(family$initialize):
+"non-integer #successes in a binomial glm!"
+
+<table class="dataframe">
+<caption>A data.frame: 6 × 3</caption>
+<thead>
+	<tr><th></th><th scope=col>kick_made</th><th scope=col>kick_distance</th><th scope=col>.pred</th></tr>
+	<tr><th></th><th scope=col>&lt;int&gt;</th><th scope=col>&lt;dbl&gt;</th><th scope=col>&lt;dbl&gt;</th></tr>
+</thead>
+<tbody>
+	<tr><th scope=row>1</th><td>1</td><td>26</td><td>0.9905066</td></tr>
+	<tr><th scope=row>2</th><td>1</td><td>34</td><td>0.9579560</td></tr>
+	<tr><th scope=row>3</th><td>1</td><td>37</td><td>0.8640040</td></tr>
+	<tr><th scope=row>4</th><td>1</td><td>23</td><td>0.9959889</td></tr>
+	<tr><th scope=row>5</th><td>1</td><td>43</td><td>0.7897841</td></tr>
+	<tr><th scope=row>6</th><td>1</td><td>45</td><td>0.6790318</td></tr>
+</tbody>
+</table>
+
+Setting levels: control = 0, case = 1
+
+Setting direction: controls < cases
+
+[90m# A tibble: 1 × 8[39m
+  model       brier log_loss   auc cal_slope cal_slope_se cal_intercept cal_data
+  [3m[90m<chr>[39m[23m       [3m[90m<dbl>[39m[23m    [3m[90m<dbl>[39m[23m [3m[90m<dbl>[39m[23m     [3m[90m<dbl>[39m[23m        [3m[90m<dbl>[39m[23m         [3m[90m<dbl>[39m[23m [3m[90m<list>[39m[23m  
+[90m1[39m m2_fg_B_lo… 0.106    0.342 0.782      6.12        0.434         -[31m3[39m[31m.[39m[31m19[39m [90m<tibble>[39m
+
+# 1) No CF, cloglog (your current setup)
+#res1 <- run_xfg_cv(fg_B, base_formula = m1_formula, reports_xfg_dir, use_cf = FALSE, link = "cloglog")
+
+# 2) No CF, logit link
+#res2 <- run_xfg_cv(fg_B, base_formula = m1_formula, reports_xfg_dir, use_cf = FALSE, link = "logit")
+
+# 3) With CF, logit link (auto-creates logit_pi_c from p_hat_attempt_clipped if missing)
+res_3 <- run_xfg_cv(
+  fg_B, base_formula = m1_formula,
+  use_cf = TRUE,        # keep CF off
+  link   = "logit",      # try logit first
+  min_kicker_plays = 5, # pool sparse kickers to REPL
+  use_weight_cap = FALSE,
+  abort_on_error = TRUE  # early abort on any error
+)
+
+Warning message in finalizeTMB(TMBStruc, obj, fit, h, data.tmb.old):
+"Model convergence problem; . See vignette('troubleshooting'), help('diagnose')"
+Warning message in eval(family$initialize):
+"non-integer #successes in a binomial glm!"
+Warning message in eval(family$initialize):
+"non-integer #successes in a binomial glm!"
+Warning message in finalizeTMB(TMBStruc, obj, fit, h, data.tmb.old):
+"Model convergence problem; . See vignette('troubleshooting'), help('diagnose')"
+Warning message in finalizeTMB(TMBStruc, obj, fit, h, data.tmb.old):
+"Model convergence problem; . See vignette('troubleshooting'), help('diagnose')"
+Warning message in eval(family$initialize):
+"non-integer #successes in a binomial glm!"
+Warning message in eval(family$initialize):
+"non-integer #successes in a binomial glm!"
+Warning message in finalizeTMB(TMBStruc, obj, fit, h, data.tmb.old):
+"Model convergence problem; non-positive-definite Hessian matrix. See vignette('troubleshooting')"
+Warning message in finalizeTMB(TMBStruc, obj, fit, h, data.tmb.old):
+"Model convergence problem; . See vignette('troubleshooting'), help('diagnose')"
+Warning message in finalizeTMB(TMBStruc, obj, fit, h, data.tmb.old):
+"Model convergence problem; non-positive-definite Hessian matrix. See vignette('troubleshooting')"
+Warning message in finalizeTMB(TMBStruc, obj, fit, h, data.tmb.old):
+"Model convergence problem; . See vignette('troubleshooting'), help('diagnose')"
+Warning message in eval(family$initialize):
+"non-integer #successes in a binomial glm!"
+Warning message in eval(family$initialize):
+"non-integer #successes in a binomial glm!"
+Warning message in finalizeTMB(TMBStruc, obj, fit, h, data.tmb.old):
+"Model convergence problem; . See vignette('troubleshooting'), help('diagnose')"
+Warning message in finalizeTMB(TMBStruc, obj, fit, h, data.tmb.old):
+"Model convergence problem; . See vignette('troubleshooting'), help('diagnose')"
+Warning message in eval(family$initialize):
+"non-integer #successes in a binomial glm!"
+Warning message in eval(family$initialize):
+"non-integer #successes in a binomial glm!"
+Warning message in eval(family$initialize):
+"non-integer #successes in a binomial glm!"
+Warning message in eval(family$initialize):
+"non-integer #successes in a binomial glm!"
+CV results comparing M1_no_cf (unweighted) vs M2_cf (IPW) on fg_B
+
+Overall M1_no_cf:
+[90m# A tibble: 1 × 5[39m
+  model                    n   auc brier logloss
+  [3m[90m<chr>[39m[23m                [3m[90m<int>[39m[23m [3m[90m<dbl>[39m[23m [3m[90m<dbl>[39m[23m   [3m[90m<dbl>[39m[23m
+[90m1[39m M1_logit_cf_on_minK5 [4m1[24m[4m0[24m432 0.780 0.105   0.339
+
+Overall M2_cf (IPW):
+[90m# A tibble: 1 × 5[39m
+  model                                  n   auc brier logloss
+  [3m[90m<chr>[39m[23m                              [3m[90m<int>[39m[23m [3m[90m<dbl>[39m[23m [3m[90m<dbl>[39m[23m   [3m[90m<dbl>[39m[23m
+[90m1[39m M2_ipw_logit_cf_on_minK5_capN@0.99 [4m1[24m[4m0[24m432 0.765 0.109   0.351

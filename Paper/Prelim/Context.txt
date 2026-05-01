@@ -1,0 +1,511 @@
+Quantifying Selection Bias in NFL Field Goal Attempts: A Comparison of Inverse Probability Weighting and Pseudo-Label Augmentation
+________________________________________
+Abstract
+•	Problem: Field goal models are trained on a biased sample of attempts selected by rational coaches, ignoring the latent difficulty of declined kicks ("non attempts").
+•	Methods: We evaluate three modeling frameworks on 2015–2024 NFL data: a Baseline GLMM (M1), an Inverse Probability Weighted model (M2), and a Pseudo-Label Augmented model (M3).
+•	Key Findings:
+1.	Rationality: Propensity scoring reveals a structural discontinuity—coaches effectively filter out low-probability kicks, creating a "Rationality Gap."
+2.	Prediction Victory: The IPW model (M2) achieves the best in-sample fit (Brier 0.0986 vs Baseline 0.1006), proving that weighting difficult kicks improves descriptive accuracy.
+3.	Evaluation Insight: The Augmented model (M3) reveals a "Pessimism Gap" of ~3.4% in the 50+ yard range, where it predicts lower success rates than the biased observed sample.
+•	Conclusion: While IPW (M2) is superior for operational forecasting, Augmentation (M3) provides the most "honest" baseline for player evaluation by accounting for the kicks coaches refused to take.
+________________________________________
+1. Introduction
+•	1.1 The Selection Bias Problem: Kickers are evaluated only on the kicks they are allowed to take. Elite kickers attempt difficult kicks; weaker kickers are protected.
+•	1.2 The "Rational Agent" Hypothesis: Do coaches filter out random variance, or do they strictly adhere to a probability threshold? (Foreshadowing the "Rationality Gap" result).
+•	1.3 Research Goal: To determine if correcting for this bias improves predictive sharpness (Brier Score) or merely alters calibration (Bias).
+2. Data & Methodology
+•	2.1 Data Universe: NFL Play-by-Play (2015–2024). 4th down plays in FG range.
+•	2.2 The Propensity Model pi: Multinomial Logistic Regression (Kick vs. Punt vs. Go). Used to generate weights 1/pi
+o	Pi: clipped (2/98%) and within 3 SD
+•	2.3 Model Hierarchy:
+o	M0 (Distance Only): The naive control.
+o	M1 (Baseline): GLMM (Random Effects on Kicker:Season & Stadium) trained on Attempts only.
+o	M2 (IPW): Weighted GLMM. Up-weights rare/difficult attempts to simulate the missing population.
+o	M3 (Augmented): Trains on Attempts + PAT + non-attempts. Non-Attempts >33y with high xFG (>0.7) are treated as Misses with a fixed weight (0.10).
+3. Results
+•	3.1 The Rationality Check (Visual Evidence):
+o	Finding: Minimal overlap between attempts and non-attempts below 30% win probability. Coaches are efficient filters.
+•	3.2 The In-Sample Leaderboard (The "Fit" Victory):
+o	M2 (IPW) is the clear winner on Brier Score (0.0986).
+o	Interpretation: Weighting the training data forces the model to respect the variance of difficult kicks, improving discrimination between Makes and Misses.
+•	3.3 The Calibration Surprise (The "Fairness" Victory):
+o	M3 (Augmented) achieves the lowest Calibration Error (0.0111 vs Baseline 0.0163).
+o	Interpretation: Explicitly labeling "declined" kicks as "misses" corrects the Optimism Bias inherent in the filtered sample.
+4. Discussion: The Pessimism Gap
+•	4.1 Quantifying the Gap (The "Money" Plot):
+o	At 50+ yards, the Baseline predicts 67.6% success (matching the biased sample).
+o	The Augmented Model predicts 64.6%.
+o	The Gap: The 3.0%–3.4% difference represents the "hidden difficulty" of the kicks that were never taken.
+•	4.2 Discrimination Analysis (Makes vs. Misses):
+o	M2 (IPW) widens the probability gap between Makes and Misses by 2.3 percentage points compared to Baseline.
+o	It achieves this asymmetrically: it is slightly less confident on Makes, but significantly more accurate on Misses (lower surprise).
+•	4.3 Operational vs. Evaluative Models:
+o	For Betting/Game Planning: Use M2 (IPW). It best describes the world as it currently exists (where coaches protect kickers).
+o	For Player Ranking: Use M3 (Augmented). It evaluates kickers against the "True Universe" of difficulty, not the "Protected Universe."
+5. Conclusion
+•	Summary: Selection bias in the NFL is structural and significant. Standard models overestimate the success probability of random long-distance kicks by ~3.4%.
+•	Final Recommendation: Analytics departments should utilize a two-track modeling approach: IPW for in-game win probability and Augmented Pseudo-Labeling for contract negotiations and roster evaluation.
+________________________________________
+Key Figures to Include
+1.	Figure 1: The Propensity Overlap Density Plot (Red vs Blue distributions).
+2.	Figure 2: The "Truth Curve" (5-yard Binned Reality vs. M1/M2/M3 smooth lines).
+3.	Figure 3: The "Pessimism Gap" Bar Chart (Side-by-side Calibration Error at 50+ yards).
+Questions
+•	Overall conclusions
+•	Why 45 yard optimism?
+o	Distribution
+•	
+Slides
+-	Primary importance
+-	20-22 minutes
+o	Questions, set up
+-	20-30 slides
+-	Models
+o	M0
+o	M1
+o	M2
+o	M3.1
+o	M3.2
+o	M3.3
+-	Story
+o	Not much happens
+	PAT are noisy
+	Non attempts
+-	Landscape
+o	Go for it vs Punt vs FG
+	Kick distance 
+	40, 50, 50
+	Combine pass and run
+	Within and outside 50
+-	Kicker specific interpretation
+
+Kicker Model: Proposed Shift to a π-Only Selection Framework (with IPW/AIPW)
+Why Change from xWPA: A two-layer decision stack built on xWPA: estimate win probability for (a) kicking and (b) going for it, multiply by success probabilities, then compare. This is great for decision audits (“should they have kicked?”), but it bakes in a rational-coach assumption and adds modeling burden: four WP heads + a 4th-down conversion model before we even correct selection bias in the make% model.
+What I’m proposing: Move selection correction and evaluation onto a single, descriptive axis:
+	Directly model π(X) = P(FG attempt | game state X) on the full, kickable 4th-down universe.
+	Use Inverse Probability Weighting (IPW) to fit the kick success model on attempted kicks only but calibrated to the entire decision space.
+	Evaluate with Augmented IPW (AIPW) so our reported accuracy reflects both attempted and non-attempted states—without fabricating outcomes.
+This keeps the modeling focused on what coaches actually do (descriptive propensities), not on what an xWPA engine believes is optimal. It also simplifies the core pipeline and hopefully improves tail calibration where coaches rarely kick.
+Practical Advantages
+	Fewer moving parts, same (or better) selection correction.
+IPW needs π(X), not xWPA. We avoid fitting and maintaining multiple WP heads before training the main model.
+	Aligns with observed behavior.
+π(X) learns real-world thresholds (distance, yards-to-go, time/score, weather) not the “rational” thresholds implied by xWPA.
+	Stronger tail performance.
+IPW boosts under-observed states (e.g., long, late, windy). AIPW lets us evaluate across the whole space, including non-attempts.
+________________________________________
+Scope & data handling (brief)
+	Seasons: 2015–2024 (Q1–Q4). PATs included (treated as certain attempts). Blocks counted as misses.
+	Rolling-origin out-of-fold (OOF) for π̂ (attempt model) across seasons to avoid leakage and capture era drift.
+Example: train 2012-2014 → predict 2015; …; train 2021-2023 → predict 2024.
+	Base M1 (no IPW): cloglog GLMM with distance spline, weather, season, (1|kicker) and (1|stadium), potential (Kicker|Season) to capture seasonal drift, plus other factors (leverage)
+	M2 (IPW): same success model, but each attempted kick weighted by w = 1/π̂ (stabilized, clipped). Control-function ON by default (add π̂ as a centered covariate).
+Optional experiment (M3): Carefully include non-attempts with cross-fitted pseudo-labels (xFĜ) and small influence weights (λ), only if it improves AIPW calibration in low-overlap regions without hurting kicks-only metrics.
+________________________________________
+Key formulas (kept minimal, to support the narrative)
+1) Attempt propensity (rolling-origin OOF)
+We fit π ̂(X)=P(A=1∣X) on all kickable 4th-down snaps (A=1 if a FG was attempted; A=0 otherwise), with features:
+	Distance & yardline splines, yards-to-go, score difference, log1p(time_remaining) + late-game spline, weather, season; maybe random intercept for coach-season.
+OOF: for each season (t), train on past 3 seasons, predict  π ̂ for season (t).
+PATs: set  π ̂= 1.
+2) IPW success model (M2; kicks only)
+Fit the cloglog GLMM for make% on attempted kicks with weights
+w_i=1/π ̂_i  "(stabilized,clipped)"
+
+Add a control-function regressor (centered) to capture residual selection:
+〖"make" 〗_i∼f("distance,weather,time,season")+(1∣"kicker")+(1∣"stadium")+((π ̃_i)┬⏟)┬("centered " π ̂_i )
+
+3) AIPW evaluation (full decision space)
+For every kickable state (kicks and non-kicks), compute the pseudo-outcome
+ψ_i "  "="  " m ̂_i "  "+"  "  A_i/π ̂_i (Y_i-m ̂_i)∈[0,1]
+
+Use ψ to compute Brier, ECE/MCE, and calibration curves by distance, wind, and late-game.
+Interpretation: kicks (A=1) pull predictions toward truth Ywith leverage 1/π ̂; non-kicks (A=0) leave ψ=m ̂.
+4) (Optional) Semi-supervised M3 (guard-railed)
+	Cross-fit M1 to get out-of-fold (xFG) ̂for non-attempts only.
+	Train one pass on kicks + non-attempts using soft targets and asymmetric weights:
+■(&"Targets:" Y_i " for kicks" ,Y ̃_i=(xFG) ̂_i " for non-attempts" @&"Weights:" w_i^(("att" ))=1/π ̂_i ,w_i^(("non" ))=λ⋅(1-π ̂_i)/π ̂_i ," " λ∈{0.1,0.2,0.3})
+
+Keep M3 only if AIPW shows a clear tail-calibration gain without degrading kicks-only performance.
+________________________________________
+What we will report
+Primary (Predictive/Operational view)
+	M2 performance: AUC, Brier, log-loss; calibration (overall; by distance bins; windy; ≤120s); tail spline (50–60 yds).
+	Kicker & stadium random-effects summaries.
+	AIPW calibration curves over the full decision space.
+Secondary (Standardized Skill view)
+	Re-score kickers on a reference state mix (canonical distances/weather/time), without control-function terms; report shrinkage-adjusted skill.
+________________________________________
+Why compare M1 vs M2 vs M3
+	M1 (no IPW) sets the baseline.
+	M2 (IPW + control-function) is the expected winner for robust calibration with minimal complexity.
+	M3 (semi-supervised) tests whether softly incorporating non-attempts buys extra tail accuracy; we only keep it if AIPW corroborates the gain.
+________________________________________
+One-paragraph summary (for the slide)
+We replace the xWPA-first stack with a π-only selection framework: learn when coaches kick (π), use IPW to fit the kick success model on attempted kicks so it generalizes to the entire decision space, and AIPW to evaluate honestly across kicks and non-kicks. This approach better reflects real coaching behavior, simplifies the pipeline, and measurably improves tail calibration (long, late, windy) while keeping an optional, guarded path (M3) to include non-attempts. We’ll report both an operational predictive view (with selection baked in) and a standardized skill view, making the results useful for forecasting and fair comparison.
+
+NFL Kicker Model Project — Full Project Summary (to Date)
+1. High-Level Summary
+You’re building a next-generation NFL field-goal prediction model that goes far beyond naïve logistic regression. The goal is to estimate the true finish-skill of a kicker, separate from attempt difficulty, using:
+•	Mixed-effects models (GLMM-TMB)
+•	Expected FG probability (xFG) models
+•	Inverse probability weighting (IPW) or Augmented Data
+•	Leverage / “opportunity” modeling
+•	Cross-validated calibration
+•	Comparison of model families (M0, M1, M2)
+Essentially:
+You’re trying to unearth a kicker’s real ability from biased attempt selection.
+This means correcting for:
+•	Venue
+•	Weather
+•	Distance
+•	Direction (left hash, right hash)
+•	Random kicker-level variation
+•	Coach decision-bias (only attempting kicks they think are makeable)
+This is why you’ve built multiple layers of models: baseline, opponent-adjusted, kicker-skill-adjusted, and then the “fully debiased” version.
+
+2. Project Structure & Modelling Steps
+Below is the project evolution from start → now.
+
+Step 0 — Data Prep
+•	Extract FG and PAT attempts.
+•	Create kick_distance, hash angle, wind variables, precip, stadium type, etc.
+•	Generate obs_weight, the base attempt weight, coming from:
+o	PATs → weight 50
+o	Field goals → weight derived from xFG probability
+(higher xFG → lower leverage → lower weight)
+•	Construct the xFG feature matrix and main predictors for downstream modeling.
+Outcomes:
+•	Clean master dataset.
+•	Separate training/test splits.
+•	Reliable xFG predictions for weighting and diagnostics.
+
+Step 1 — Build xFG Model (“Attempt Difficulty”)
+This is the pure physics/geometry/environment model.
+•	Fit logistic GLMM predicting kick made from:
+o	distance
+o	weather
+o	stadium type
+o	hash angle
+o	wind
+o	pressure
+o	random effects for kicker (optional)
+•	Check calibration curves.
+•	Output π̂ (predicted make probability) = baseline xFG.
+This becomes the backbone of weighting in later models.
+
+Step 2 — IPW + Hájek Normalization
+You experimented with several weighting scheme:
+1.	Raw IPW:
+( w_i = \frac{1}{\hat{\pi}_i} ) for misses
+( w_i = \frac{1}{1-\hat{\pi}_i} ) for makes
+(but this is unstable)
+2.	Stabilized Weights:
+Normalize by mean π̂ to prevent pathological values.
+3.	Hájek Weights (best):
+Normalize total weight = N attempts
+→ improves variance
+→ improves calibration
+→ less sensitive to extreme π̂
+Note:
+•	IPW uses a “leverage” variable which considers the win probability at stake given the circumstances
+Results:
+•	You found Hájek performs the best for M2 calibration.
+•	Removing “normalize = TRUE” simplified the workflow, ci did not meaningfully make a difference in performance.
+
+Step 3 — The Main Model Family: M0, M1, M2
+M0 – Unweighted Logistic GLMM
+•	A baseline, only distance using manually set splines
+M1 – Unweighted Logistic GLMM with Random Effects and other Variables
+•	Wind, Temp, Weather
+•	Stadium and kicker:season get RE
+M2 – Weighted Logistic GLMM with IPW based on attempt probability
+•	M1 model plus IPW as weights
+•	Weights we multiplied by 10 and rounded to an integer to avoid warnings in the model
+•	Between ~1-9 for the IPW after adjustments
+•	Key Idea: Harder kicks account for more in the model, it can learn better at the tails
+Conclusions
+•	M2 fits if weights are used correctly
+•	M2 > M1 for in sample metrics (barely)
+•	M1 best for out of sample CV predications
+•	Both are improvement over M0 (distance only) but not markedly. Distance dominates importance.
+Step 4 - Alternate Model Family: Augmented Data
+•	No longer using just FG or FG plus IPW.
+•	Adding PAT and Non-attempts
+o	Non-attempts are defined as 4th down where the team did not kick (punt, pass, or run)
+o	Filtered for applicability to the model by fg distance, kick probability (based on M1 predictions) and attempt probability
+•	Sometime just add PAT, sometimes both PAT and NON
+•	Non-attempts were included with different pseudo results, either:
+o	0 for all, assume a miss, that’s why the coach did not kick
+o	0 if below a xFG threshold, 1 if above, true “pseudo” label
+Conclusions
+•	All variations of adding non-attempts decreased the in-sample metrics when compared to PAT only. It did perform better than baseline (marginally) when including both at some weights but this was due to PAT data carrying the increase.
+________________________________________
+Metrics
+•	AUC (Main)
+•	Brier
+•	Logloss
+•	AIC/BIC
+•	Calibration Score
+•	Visual
+o	Calibration plot (xFG vs FG)
+o	Calibration by distance
+________________________________________
+4. Outcomes So Far
+Strong successes
+•	The xFG model is pretty good and efficient with GLMM
+•	Weighting schemes can show marginal in sample predictive improvements. M1 vs M2 tested in CV, weighted performed worse on unseen. In all cases with augmented data the models with PAT and non-attempts predict worse on unseen. No CV test as not worth it.
+•	M1 and M2 outperform M0 in calibration.
+•	You have a strong reproducible pipeline:
+o	Data prep
+o	xFG modeling
+o	Weight engineering
+o	GLMM skill modeling
+o	Cross-validation
+o	Diagnostics
+________________________________________
+5. Overall Interpretation
+You are building a truly modern kicker ability model, something that mirrors:
+•	MLB DRS + xERA approaches
+•	NBA RAPM weighting
+•	NHL xGoals AIPW techniques
+•	Causal inference weighting + GLMM hierarchy
+
+6. Extensions
+•	The conclusions are pretty lackluster so I want to expand the narrative
+o	Utilize my leverage, attempt pi models to explain trends or other findings
+o	Choose a master model (M1 + low weight PAT data) and use it to rank kickers by FG% - xFG%
+o	Who on average was allowed to kick the toughest kicks?
+•	Kicking has radically changed over the 2015 to 2025 period. Kickers are expected to make from 50 and 55 yards plus routinely. The strategy has changed and attempts are way up, especially from distance. This could serve as an introduction, setting the landscape. 
+•	Any other suggestions that leverage my existing data and pipelines/code with some minimal tweaks. 
+Schuckers Football Project
+The goal of this project is to build a better model for predicting the success of field goal kickers. The main idea is to explore if adding the information regarding a coach’s decision to kick or not kick can improve the predictions. For this we need to consider only situations where the coach did not kick but could have logically opted to kick. So situations where a team is down by more than 3 points late in a game do not apply as the team needs to go for it on 4th down. Need to base the work on existing papers that attempted to analyze expected field goal% with the addition of the human intervention causing “unobserved data”. The challenges will be to collect all the data required, for the kicks and especially the non-kicks. Also understanding the complexity of some of the literature. I only need to know what I need to know for the project and formulas and Greek symbols are not native to me.
+Notes:
+-	NFL Kickers
+o	Probability of make (well understood)
+o	When coaches choose not to kick
+	Does their decision not to kick improve predictive power?
+	Does the coach know something or have an intuition that can be statistically validated?
+o	Leg tired
+o	1st vs 2nd half of the season
+	Train vs test
+o	Kick Filter
+	Score & Time
+	Kicker Range
+•	Individual or top n % of all
+•	Filter out game situation kicks
+	Do not include 4th quarter?
+	Do not include blocked or fumbled (botched snap?)
+-	Logistic Regression Classification
+o	Splines included
+o	Log Reg is somewhat inflexible and forces symmetry
+-	Packages:
+o	nflfastR
+o	nfl-data-py
+-	Variables
+o	Kicker ID
+o	Distance
+o	Stadium
+	Indoor vs Outdoor
+	Denver
+o	Wind, Rain, Temperature
+o	Kicker Age
+o	Experience
+o	Years with Team
+o	Timeout before by opposing team (icing)
+o	Turf type
+Paper Questions
+Building a statistical model for field goal kicker accuracy
+https://jacob-long.com/post/evaluating-kickers/
+https://jacob-long.com/post/kickers-methods-notes/ 
+-	Random intercepts and random slopes?
+-	LOOIC
+-	AIC/BIC/DIC/WAIC
+-	ELPD
+-	Bayesian model stacking
+-	Brier scores
+-	Priors
+-	Replacement status and handling player specific variables
+Shrinkage estimation of NFL field goal success probabilities (attached PDF)
+-	Log link function
+-	All of it is gibberish to me
+
+Observations
+-	Kicker weights by attempts for shrinking to league average up to a max point (If they have >X number of attempts they max out at 0.75).
+o	Maybe a kick specific weight as well (accounting for smaller sample sizes at longer distances for specific kickers)
+-	Plan is to use a log reg model with splines (suggested by professor). I imagine this replaces the need for CLL model.
+Outcome
+-	See if adding coaching decisions improves the predictive performance of the model.
+-	Test many variables, use a selection method to optimize simplicity, generalizability and predictive power. Some cross fold, leave one out validation.
+-	Need to include kicker as a variable, use some shrinking to make estimates practical.
+-	Will include prior experience (# of seasons by getting a dataset of kicker debuts) as a variable to account for aging (could have some interaction between season # and age)
+-	How to account for non-observed data? Not a binary outcome. Its either made or missed, how do we account for not attempted in a binary classification?
+-	Want to first focus on an outcome model, can we improve the predicted success of prior observed kicks with the addition of coaches decisions. However, would be interested in expanding to a coach decision model. This is long term stretch goal but think about expected points given the distance to the end zone if you go for it on fourth down * the probability of success, the opportunity cost of the 3 points given up, the expected points of the opponent if they get the ball at the spot if the kick fails * probability of failure, and finally the expected points of the opponent if you punt (assume an average distance or location for where ball lands).
+-	Assess performance via multiple methods
+-	Focus on interpretability to start
+-	We’ll leave out extra points as others did and just focus on field goals.
+-	Will include the season to account for league wide improvement
+-	Can try with and without blocks, but they likely do have impact due to trajectory as you said. Too hard to get data on botched snaps so wont account for it (assume its just part of the randomness)
+
+Next steps
+-	Start pulling data (I’ll build in R as this is the language the professor is experienced in) and building increasingly complex models
+o	Start with distance, add other factors
+-	Figure out a way to filter play by play data to get reasonable non-attempt situations. 
+-	Combine the non attempt data into the model (I guess just include a binary variable that is attempted 1 or 0, so its not an outcome just another variable)
+
+Update1:
+________________________________________
+NFL Field Goal Model – Roadmap & Handling Options
+Project Aim
+Build an interpretable, reproducible model of field goal success probabilities that:
+•	Accounts for distance, environment, and kicker skill.
+•	Tests whether including coaching decisions (attempt vs. non-attempt) improves predictive accuracy.
+•	Balances simplicity, interpretability, and generalizability with room for expansion.
+________________________________________
+Core Workflow
+1.	Data Collection (2014–2024)
+o	Use nflfastR (R) to pull play-by-play.
+o	Construct:
+	FG_Attempts: actual attempts (exclude PATs; test with/without blocks).
+	FG_Eligible_NonAttempts: 4th-down plays in FG range where coach did not kick.
+2.	Stage 1: Attempt Model (Coaching Decisions)
+o	Logistic regression for P(attempt=1∣X)P(\text{attempt}=1 \mid X).
+o	Features: distance, score/time context, yardline, environment, season, kicker proxy.
+o	Output: predicted attempt probabilities for each attempted FG.
+3.	Inverse Probability Weighting (IPW)
+o	Compute weights = 1 / predicted attempt prob.
+o	Ensures the success model isn’t biased by selection (only certain long kicks being tried).
+4.	Stage 2: Success Model (Kick Outcome)
+o	Binary GLMM (make/miss).
+o	Features: splined distance, environment, Denver altitude, season trend.
+o	Kicker effects: random intercept (shrinkage), optional random slope for distance.
+o	Links: compare cloglog vs logit.
+o	Use IPW as weights.
+5.	Evaluation
+o	Metrics: Brier score, AUC, calibration plots (overall + distance bins).
+o	Validation: cross-fold CV or train/test split (2014–2021 vs 2022–2024).
+o	Assess whether adding coaching decisions (via IPW) improves calibration at long distances.
+________________________________________
+Model Handling Options
+•	Baseline: Distance-only logistic (no kicker effects).
+•	Enhanced: Add environment + league-year trend.
+•	Shrinkage: Random effects for kicker (partial pooling; robust to small samples).
+•	Bias correction: IPW vs no IPW → measure gains in calibration.
+•	Stretch goal: Two-stage decision calculator combining kick EP, go-for-it EP, and punt EP using nflfastR EP models.
+________________________________________
+Key Considerations for Advisor Discussion
+•	Simplicity vs complexity: How far to push multilevel/Bayesian vs logistic GLMM?
+•	Non-attempts: Start with IPW; only move to full selection models (Heckman/probit) if needed.
+•	Interpretability: Coach-facing outputs (success % by distance/environment) are priority.
+•	Scope: Field goals only (no PATs), optional block inclusion.
+•	Future expansion: Coaching decision model → expected points framework.
+________________________________________
+
+Questions:
+-	Modelling complexity, keeping simple with log reg?
+-	How do we incorporate the decisions not to kick?
+-	Individual Probability Weighting?
+o	Built in FG prob column?
+-	Blocked kick?
+-	Shrinkage?
+-	Non-attempt filter
+o	Distance, score, time
+o	Win probability?
+-	Dome binary variable
+-	How to handle wind, weather, temperature.
+-	Try to derive direction based on opening kick off and side of field + quarter?
+-	Model kicker age and experience explicitly?
+-	Train/Test, cross fold, leave one out
+
+Meeting 2:
+-	Attempt
+o	3 different methods
+	Attempt = 1, Non-Attempt = 0
+	Constants
+	Probability
+o	Blocks and Non Attempts are weighted
+-	Shrinkage for later
+-	Distance based probability for blocks as a variable. 
+o	Extract probabilities for blocks, unblocked make or miss
+o	Kick or Not
+	Not kicks get P(make|distance)
+o	Block or Not
+	Blocks get P(make|distance)
+o	Make or miss
+	Get a weight of 1
+-	Include PAT after 2015
+-	Kicker ID, Age, Experience
+-	Full model to get P(make) to assign probabilities to non attempts and blocks.
+-	Model 0
+o	Distance only
+-	Model 1
+o	All variables, only make/miss
+-	Model 2
+o	All variables with wseights from M1
+
+Meeting Summary for Kicker Model Discussion
+Current Progress:
+•	Tested multiple models (GLM, GLMER, BRMS) 
+•	GLMER with natural splines has yielded the most efficient and best-performing results so far.
+Questions for Discussion:
+1.	BRMS Model Value: Is it worth using the BRMS model? Focus on refining the GLMER and then run a final version in BRMS? Any tips on setting up BRMS more effectively?
+2.	Feature Engineering: Added pressure-related features (e.g., game-tying kicks, playoff scenarios, icing the kicker). Further work on explicitly defining some scenarios and consider other interactions?
+3.	Non-Kick Opportunities: Need to define when a team “could have” reasonably kicked (e.g., excluding 4th-and-1, focusing on 4th-and-2 or more, and considering game context). How should we formalize this definition?
+Current Scope:
+•	Currently running models without including blocked kicks—only make/miss outcomes—and we can adjust this later if needed.
+Current Model
+# M1 with kicker age and experience
+glmer_m1_ns_age_exp <- glmer(
+  y ~ ns(kick_distance, df = 4) + wind_z + temp_z + poly(season_z, 2) +
+       indoors + is_rain_showers + is_snow_sleet + is_hazy_fog +
+       iced + l2m + go_ahead + to_tie + close7 + l2m*clock_running +
+       age_z*exp_z + high_altitude + is_turf +
+       temp_z:ns(kick_distance, df = 2) +
+       wind_z:ns(kick_distance, df = 2) +
+       (1 | stadium_id) +
+       (1 | kicker_player_id),
+  data = d,
+  family = binomial(link = "cloglog"),
+  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
+)
+
+Notes:
+-	Splines
+o	Fits cubic at each spline, forces smoothness.
+o	New package, splines2
+	25, 35, 45, 55 for example 
+	Coef at each knot is the actual predicted value for the spline distance
+-	Features
+o	Play around a little bit with features
+o	Focus on pressure situations
+	To tie, go ahead more than 3, in the 4th etc. 
+-	Cross fold validation for out of sample to reduce overfitting
+o	Built in for glmer?
+-	Blocks
+o	M1 – no blocks, M2 – blocks, M3 – blocks and non-attempts
+	M1 used to weight blocks by probability
+	M1 – with blocks
+	Which performs better in predicting full data set
+o	Use the best model to weight non-kicks
+-	Non-Attempts
+o	4th & 1 – very specific criteria
+o	4th & 2 – still strict, a bit more flexible
+o	4th & 3 beyond – any attempts in FG range that are plausible to kick
+o	Variables
+	Score
+	Time
+	Yard line
+	Distance to 1st
+	Temp & Wind
+	Altitude
+	Kicker
+	In game success
+o	Simple
+	4th Q, score diff >=-3, <=5, 1st down distance >=2, FG distance <= 50
+
+Win Probability Decision Machine
+-	Situations where the teams eWPA for FG is higher than the eWPA for going for it. 
+-	WP_post of going for it on 4th 
+o	One model in the 4th Q
+o	One model for any game time
+o	Variables: score diff, time, 

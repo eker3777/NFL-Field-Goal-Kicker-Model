@@ -1,0 +1,223 @@
+---
+title: "Strategy vs. Confidence: Selection Bias in NFL Field Goal Modeling"
+authors:
+  - name: Elliott Kervin
+    affiliation: The University of North Carolina at Charlotte
+    roles: writing
+    corresponding: true
+  - name: Dr. Michael Schuckers
+    affiliation: The University of North Carolina at Charlotte
+    roles: writing
+keywords:
+  - nfl analytics
+  - field goals
+  - selection bias
+  - inverse probability weighting
+  - mixed effects models
+bibliography: references.bib
+---
+
+# Abstract
+
+NFL field goal outcomes are observed under a selective decision process: coaches choose when a kick is attempted, and that selection mechanism can bias kicker evaluation and probability calibration. This study compares three model classes on 2015-2024 NFL kickable states: a baseline success model trained on observed attempts (M1), an inverse probability weighted variant using attempt propensity scores (M2), and an augmented pseudo-label robustness variant (M3). The attempt propensity model is strong across seasons (AUC approximately 0.94-0.96), indicating that coaching behavior is predictable from game state. In-sample, M2 improves fit relative to M1 (Brier 0.0985 vs 0.1005), but out-of-sample predictive performance remains strongest for M1 (global test Brier 0.0975 and AUC 0.7719, versus M2 Brier 0.1001 and AUC 0.7596). M3 shifts long-range calibration in the expected direction (50+ mean probability approximately 0.646 versus baseline approximately 0.676), but does not improve predictive performance and is treated as exploratory. The practical recommendation is to keep M1 as the predictive benchmark, use M2 as the primary correction attempt for selection bias diagnostics, and position M3 as a secondary robustness lens for tail-behavior interpretation.
+
+# 1. Introduction
+
+## 1.1 Motivation: Selection Bias in Kicker Evaluation
+
+Field goal modeling is not only a shot-making problem. It is also a selection problem. The observed dataset contains kicks that coaches chose to attempt, while many kickable fourth-down situations are censored by strategic alternatives such as punts or offensive plays. If this selection is ignored, model-based kicker evaluation can inherit survivorship bias: probabilities appear better calibrated than they are in the full decision space, and long-distance performance can be overstated.
+
+This project investigates whether explicit modeling of the attempt decision improves estimation of field goal success probabilities and, ultimately, kicker evaluation. The core tension is practical and methodological: correcting selection bias can improve descriptive fit in difficult states while still failing to improve out-of-sample prediction.
+
+## 1.2 Project Objective and Research Questions
+
+The primary objective is to quantify how much predictive and evaluative behavior changes when attempt selection is modeled explicitly.
+
+Research questions:
+
+1. Does inverse probability weighting of observed attempts (M2) improve predictive accuracy relative to an unweighted baseline mixed model (M1)?
+2. Do pseudo-labeled non-attempt augmentations (M3) improve calibration in long-distance tails, and at what predictive cost?
+3. Is the coaching attempt mechanism sufficiently structured to support a propensity-based correction framework?
+
+Working hypotheses:
+
+1. The attempt propensity model will be strongly predictive of observed kick decisions.
+2. M2 will improve in-sample fit by reweighting under-observed difficult attempts.
+3. M1 will remain the strongest out-of-sample predictive model.
+4. M3 will provide directional calibration insight in the tail, but not predictive gains.
+
+## 1.3 Modeling Frame
+
+The manuscript uses a pi-first selection framework. Let $A_i$ denote whether a kick is attempted and $Y_i$ denote kick success when attempted. The decision process is modeled by $\hat{\pi}(X_i)=P(A_i=1\mid X_i)$ over kickable game states. Success models are then compared under three training strategies:
+
+1. M1 baseline mixed model on observed attempts.
+2. M2 weighted mixed model using stabilized and clipped inverse propensity weights.
+3. M3 exploratory augmented training with conservative pseudo-label influence.
+
+This structure separates predictive benchmarking from bias-correction diagnostics.
+
+## 1.4 Preview of Findings
+
+Current evidence from the project artifacts supports the following high-level summary:
+
+1. Attempt propensity is stable and highly predictive across seasons.
+2. M2 improves in-sample fit but does not outperform M1 on held-out prediction.
+3. M3 alters long-distance calibration behavior but degrades predictive metrics versus M1, and therefore remains exploratory.
+
+These findings motivate a two-layer interpretation: M1 as predictive benchmark, M2 as main selection-bias correction attempt, and M3 as secondary robustness analysis.
+
+## 1.5 Paper Roadmap
+
+Section 2 defines data scope, feature engineering, and the attempt propensity workflow. Section 3 specifies M1-M3 model architecture and evaluation metrics. Section 4 reports results in predictive-first order. Section 5 discusses interpretation and deployment implications. Section 6 addresses limitations. Section 7 concludes.
+
+# 2. Data and Pipeline
+
+## 2.1 Data Universe
+
+Planned content:
+
+1. Seasons, play filters, and kickable-state definition.
+2. Treatment of PATs and blocked attempts.
+3. Train/test and rolling-origin framing.
+
+## 2.2 Feature Engineering
+
+Planned content:
+
+1. Distance splines and geometric covariates.
+2. Weather and venue normalization.
+3. Context features (time, score, leverage, game state).
+
+## 2.3 Attempt Propensity Model
+
+Planned content:
+
+1. Multinomial decision model setup (kick vs alternatives).
+2. Rolling-origin out-of-fold generation.
+3. Calibration and effective sample size diagnostics.
+
+# 3. Methods
+
+## 3.1 Success Models
+
+Planned content:
+
+1. M1 baseline mixed model specification.
+2. M2 IPW-weighted specification and clipping/stabilization.
+3. M3 exploratory pseudo-label variants and guardrails.
+
+## 3.2 Estimands and Evaluation Metrics
+
+Planned content:
+
+1. Predictive metrics: Brier, log loss, AUC, threshold metrics.
+2. Calibration diagnostics by distance and game context.
+3. In-sample versus out-of-sample claim policy.
+
+## 3.3 Inference and Robustness Policy
+
+Planned content:
+
+1. Why M3 is classified as exploratory.
+2. Criteria for claiming predictive improvement.
+3. Tail-only interpretive diagnostics.
+
+# 4. Results
+
+## 4.1 Attempt Selection Structure
+
+Planned content:
+
+1. Propensity model strength by season.
+2. Rationality and overlap diagnostics.
+3. Strategic decision frontier context.
+
+## 4.2 Predictive Benchmark: M1 vs M2
+
+Planned content:
+
+1. In-sample fit comparison (M2 advantage).
+2. Held-out global and 50+ comparison (M1 advantage).
+3. Interpretation of the correction-versus-prediction tradeoff.
+
+## 4.3 Exploratory Robustness: M3
+
+Planned content:
+
+1. Pseudo-label design grid and weighting sensitivity.
+2. Evidence that predictive metrics do not improve over M1.
+3. Why M3 remains a secondary analysis.
+
+## 4.4 Distance-Tail Diagnostics
+
+Planned content:
+
+1. 45-55 yard behavior and optimism/pessimism framing.
+2. 50+ calibration shift and tail probability interpretation.
+3. Relation to workload and high-weight attempt profiles.
+
+## 4.5 Figures and Tables (Planned)
+
+Planned figure/table map:
+
+1. Propensity overlap and calibration diagnostics.
+2. M1 vs M2 predictive comparison table (global and 50+).
+3. M3 variant summary table and tail comparison.
+4. Truth/bias curves and distribution overlays.
+
+# 5. Discussion
+
+## 5.1 What the Models Learn
+
+Planned content:
+
+1. M1 as strongest predictive benchmark.
+2. M2 as principled correction attempt that improves fit but not test prediction.
+3. M3 as exploratory calibration lens rather than production predictor.
+
+## 5.2 Operational Implications
+
+Planned content:
+
+1. Forecasting and decision-support recommendations.
+2. Kicker evaluation and communication strategy.
+3. How to report correction-aware diagnostics without overstating performance gains.
+
+## 5.3 Why Corrective Models May Not Win Prediction
+
+Planned content:
+
+1. Distribution shift and season-to-season strategy change.
+2. Weight-variance and tail sample constraints.
+3. Missing covariates and residual confounding.
+
+# 6. Limitations
+
+Planned content:
+
+1. Observational design and non-causal interpretation.
+2. Sensitivity to pseudo-label rules and weighting choices.
+3. Sparse extreme-distance regimes and uncertainty inflation.
+
+# 7. Conclusion
+
+Planned content:
+
+1. Final statement on predictive ranking (M1 first).
+2. Role of M2 as best correction attempt for selection bias diagnostics.
+3. Role of M3 as exploratory robustness only.
+4. Next-step roadmap for expanded validation and manuscript submission.
+
+# Appendix A. Artifact-to-Section Mapping
+
+This manuscript section will map each reported figure and table to source artifacts in the reports and notebooks directories, including exact file names used to generate each displayed result.
+
+# Appendix B. Citation Backlog
+
+The current bibliography is a placeholder. Before submission, add core references for:
+
+1. Selection bias and inverse probability weighting.
+2. AIPW and doubly robust evaluation.
+3. Sports expected-value modeling and NFL decision analytics.
+4. Mixed-effects modeling references for hierarchical binary outcomes.
+
