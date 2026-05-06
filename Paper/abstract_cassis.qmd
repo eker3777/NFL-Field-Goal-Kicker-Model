@@ -1,0 +1,70 @@
+---
+title: "Correcting Selection Bias in NFL Field Goal Models via Inverse Probability Weighting"
+subtitle: "CASSIS 2026 Abstract Submission"
+author:
+  - name: "Elliott Kervin & Dr. Michael Schuckers"
+    affiliation: "The University of North Carolina at Charlotte"
+    roles: "writing"
+    corresponding: true
+keywords:
+  - nfl analytics
+  - field goals
+  - selection bias
+  - inverse probability weighting
+  - mixed effects models
+date: "2026-05-06"
+format:
+  pdf:
+    documentclass: article
+    geometry: "margin=1in"
+    fontsize: 11pt
+    keep-tex: false
+    number-sections: false
+  html:
+    toc: false
+    self-contained: true
+bibliography: Field_Goal_Kicking_IPW/references.bib
+suppress-bibliography: true
+---
+
+## Introduction
+
+NFL field goal (FG) attempts are subject to selection bias. Coaches decide whether to kick based on distance, game state, and their read of their kicker's ability, so observed attempts over-represent favorable situations. Prior work on FG modeling has focused on distance, environment, and kicker-level random effects [@pasteur2014; @osborne2017; @long2019eval], but the non-random structure of the attempt distribution has received limited attention. We explore whether inverse probability weighting (IPW), which reweights observed attempts by the inverse of their propensity to be attempted, can account for this structure and whether doing so improves model fit relative to an unweighted approach. We also evaluate data augmentation with non-attempts as pseudo-misses (M3) as an alternative strategy.
+
+## Data and Methods
+
+### Data
+
+Play-by-play data from the 2015--2025 NFL regular and post-seasons were obtained via the nflfastR package [@nflfastr]. FG attempts totalled 11,548 in-sample after excluding blocked kicks, which reflect defensive outcomes rather than kicker skill. An additional 32,666 fourth-down situations where a kick was not attempted but was within range (kick distance above 33 yards and propensity score above 25%) were retained for the M3 augmentation. A 20% stratified random sample of games per season formed the held-out test set (n = 2,251 kicks).
+
+### Propensity Model
+
+A multinomial rolling-origin logistic regression was fitted to estimate P(FG attempt | context) across the three coaching decisions: attempt, punt, or go for it. Contextual features included field position, score differential and time remaining. Predictions were generated out-of-fold to prevent leakage into the outcome model. Stabilized IPW weights were computed as the overall FG attempt prevalence divided by the clipped propensity score, then Hajek-normalized within each season so that the mean weight equals one, followed by a three-sigma cap to limit extreme inflation.
+
+### Outcome Models
+
+Four GLMMs were fitted using glmmTMB with a logit link and a B-spline basis for kick distance (interior knots at 28, 38, 48, and 58 yards; boundary knots at 18 and 70 yards).
+
+- **M0** (baseline): distance B-splines only, no random effects.
+- **M1** (full GLMM): distance splines plus wind, temperature, their interaction, surface, precipitation, clock situation, last-two-minutes indicator, playoffs, and wind-by-distance spline interactions, with kicker-season and stadium random intercepts.
+- **M2** (IPW): M1 formula fitted with Hajek IPW case weights.
+- **M3** (augmented): M1 formula fitted on a dataset augmented with PAT attempts and non-attempt pseudo-misses, each down-weighted to 0.10 relative to observed FG attempts.
+
+## Results
+
+Table 1 presents Brier score and AUC on the in-sample (IS; n = 11,548) and test sets (OOS; n = 2,251). Distance dominates across all models: M0 is competitive at short and medium range, confirming that most variance in FG outcomes is explained by distance alone. M2 achieves the best in-sample fit overall (Brier 0.0999, AUC 0.798) and captures the most variation at longer distances, with a 10% Brier reduction versus M1 at 50--59 yards and a 22% reduction at 60+ yards, consistent with IPW upweights concentrating on long-distance kicks. M1 outperforms M2 out-of-sample (Brier 0.1007 vs. 0.1029, AUC 0.769 vs. 0.760), and M3 shows no consistent gain over M1 on either split.
+
+**Table 1: Model Performance -- In-Sample and Test Set**
+
+| Model | IS Brier | IS AUC | OOS Brier | OOS AUC |
+|-------|--------:|-------:|----------:|--------:|
+| M0 (distance only) | 0.1045 | 0.774 | 0.1012 | 0.762 |
+| M1 (full GLMM)     | 0.1016 | 0.796 | **0.1007** | **0.769** |
+| M2 (IPW)           | **0.0999** | **0.798** | 0.1029 | 0.760 |
+| M3 (augmented)     | 0.1024 | 0.791 | 0.1017 | 0.767 |
+
+*Lower Brier score is better; higher AUC is better. Blocked kicks excluded.*
+
+## Discussion and Conclusions
+
+IPW weighting explains more in-sample variation at longer distances, suggesting the attempt distribution carries information about kick difficulty that an unweighted model does not capture. The in-sample advantage does not transfer out of sample, where M1 remains the stronger predictor, a predictable consequence of variance inflation from large weights on rare long-distance observations. For out-of-sample prediction M1 is the preferred model, and M3 augmentation offers no consistent improvement over it. Future work will focus on player-level evaluation, with a particular interest in whether kicker talent differences are expressed uniformly across distances or concentrated at longer ranges.
