@@ -1,3 +1,9 @@
 {
-  "python.defaultInterpreterPath": "C:\\Python\\.venv\\Scripts\\python.exe"
+  "python.defaultInterpreterPath": "C:\\Python\\.venv\\Scripts\\python.exe",
+  "[quarto]": {
+    "editor.wordWrap": "on"
+  },
+  "[markdown]": {
+    "editor.wordWrap": "on"
+  }
 }

@@ -2,7 +2,10 @@ data/*
 !data/.keep
 reports/*
 !reports/.keep
+!reports/figures/
+!reports/figures/*
 *.rds
 .Rhistory
 .Rproj.user
 .ipynb_checkpoints/
+

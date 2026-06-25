@@ -1,5 +1,6 @@
 project:
   type: manuscript
+  output-dir: "."
 
 manuscript:
   article: index.qmd
@@ -10,9 +11,7 @@ format:
       hypothesis: true
   docx: default
   jats: default
-
-  # (other formats)
-  # pdf: default
+  pdf: default
 
 execute:
   freeze: true

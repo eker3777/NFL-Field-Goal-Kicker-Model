@@ -1,5 +1,5 @@
 ---
-title: "Strategy vs. Confidence: Selection Bias in NFL Field Goal Modeling"
+title: "Here's the Kicker: Correcting Selection Bias in NFL Field Goal Models via Inverse Probability Weighting"
 authors:
   - name: Elliott Kervin
     affiliation: The University of North Carolina at Charlotte
@@ -14,210 +14,343 @@ keywords:
   - selection bias
   - inverse probability weighting
   - mixed effects models
+date: "2026-05-16"
+toc: true
+toc-depth: 3
 bibliography: references.bib
 ---
 
 # Abstract
 
-NFL field goal outcomes are observed under a selective decision process: coaches choose when a kick is attempted, and that selection mechanism can bias kicker evaluation and probability calibration. This study compares three model classes on 2015-2024 NFL kickable states: a baseline success model trained on observed attempts (M1), an inverse probability weighted variant using attempt propensity scores (M2), and an augmented pseudo-label robustness variant (M3). The attempt propensity model is strong across seasons (AUC approximately 0.94-0.96), indicating that coaching behavior is predictable from game state. In-sample, M2 improves fit relative to M1 (Brier 0.0985 vs 0.1005), but out-of-sample predictive performance remains strongest for M1 (global test Brier 0.0975 and AUC 0.7719, versus M2 Brier 0.1001 and AUC 0.7596). M3 shifts long-range calibration in the expected direction (50+ mean probability approximately 0.646 versus baseline approximately 0.676), but does not improve predictive performance and is treated as exploratory. The practical recommendation is to keep M1 as the predictive benchmark, use M2 as the primary correction attempt for selection bias diagnostics, and position M3 as a secondary robustness lens for tail-behavior interpretation.
+NFL field goal (FG) outcomes are observed under a selective coaching decision process: teams attempt kicks in favorable game states, so the observed attempt distribution over-represents an easier subset of the full universe of possible kicks. We compare the results of an unweighted full GLMM baseline (M1) to alternative approaches. We apply inverse probability weighting (IPW) to reweight observed FG attempts by the inverse of their estimated propensity to be attempted, and evaluate the resulting model (M2) along with a data-augmented assumed miss for declined attempts model (M3). The attempt propensity model is trained on a rolling window of all fourth-down plays ($n = 32,666$ plays) to predict coaching decisions. The success outcome models are trained and evaluated on actual FG attempts ($n = 11,548$ in-sample attempts; $n = 2,251$ held-out test kicks). In-sample, M2 achieves the best fit overall (Brier 0.0984) with calibration gains concentrated at long distances: a 22.8% Brier reduction at 60+ yards and a 5.6% reduction at 50-59 yards versus M1. Out of sample, however, M1 outperforms M2 (Brier 0.1007 vs. 0.1029), and M3 shows no consistent gain over M1. The in-sample improvements are primarily driven by error reduction on the upweighted longer kicks, though these gains do not generalize to out-of-sample data. Coaching selection bias does not appear to meaningfully impact the predictability of kick success, which remains almost entirely a function of distance and environmental covariates. We recommend M1 as the predictive benchmark, and introduce field goal outcome expectation (FGOE), derived from a population-marginal variant of M2, as a principled kicker evaluation metric.
 
 # 1. Introduction
 
-## 1.1 Motivation: Selection Bias in Kicker Evaluation
+## 1.1 Motivation
 
-Field goal modeling is not only a shot-making problem. It is also a selection problem. The observed dataset contains kicks that coaches chose to attempt, while many kickable fourth-down situations are censored by strategic alternatives such as punts or offensive plays. If this selection is ignored, model-based kicker evaluation can inherit survivorship bias: probabilities appear better calibrated than they are in the full decision space, and long-distance performance can be overstated.
+NFL field goal kicking is a high-stakes, discrete skill evaluated routinely by teams, broadcasters, and analysts. Kicker performance metrics typically compare observed make rates or expected points added to league-average baselines derived from models trained on attempted kicks. Prior work has attempted to address these difficulties using expectation-based metrics [@pasteur2014; @osborne2017] and distance-adjusted baselines [@long2019eval; @long2019methods], but nearly all such metrics share a structural limitation: they condition on attempts that coaches chose to take.
 
-This project investigates whether explicit modeling of the attempt decision improves estimation of field goal success probabilities and, ultimately, kicker evaluation. The core tension is practical and methodological: correcting selection bias can improve descriptive fit in difficult states while still failing to improve out-of-sample prediction.
+Coaching selection is not random. When a team faces fourth down at the opponent's 35-yard line, leading or trailing by a few points, the decision to attempt a field goal reflects the coach's assessment of kick distance, weather, the kicker's perceived range, score context, and game leverage. In more favorable situations, kicks are more likely to be attempted. As a result, the observed distribution of FG attempts may systematically over-represent favorable situations and under-represent long, difficult, or weather-degraded attempts.
 
-## 1.2 Project Objective and Research Questions
+If this selection process is sufficiently structured, it could introduce bias into models trained exclusively on observed attempts. In particular, kicker evaluation metrics that rely on these models may not fully account for the difficulty distribution each kicker faces. Coaches who trust their kicker's range may assign more difficult kicks, including longer attempts, kicks in severe weather, or attempts in high-pressure game states where a conservative coach would elect to punt or go for it. If this effect is meaningful, raw make rates or simple distance-based baselines could penalize trusted players by ignoring the selective difficulty of their attempts.
 
-The primary objective is to quantify how much predictive and evaluative behavior changes when attempt selection is modeled explicitly.
+This paper investigates whether correcting for coaching selection bias through inverse probability weighting improves field goal outcome models, and whether such corrections produce fairer kicker evaluation metrics. We test whether the selection mechanism is strong enough to warrant a propensity-based correction, and whether the resulting adjustments translate into predictive gains.
 
-Research questions:
+## 1.2 Research Questions
 
-1. Does inverse probability weighting of observed attempts (M2) improve predictive accuracy relative to an unweighted baseline mixed model (M1)?
-2. Do pseudo-labeled non-attempt augmentations (M3) improve calibration in long-distance tails, and at what predictive cost?
-3. Is the coaching attempt mechanism sufficiently structured to support a propensity-based correction framework?
+Three research questions guide this analysis:
 
-Working hypotheses:
+1. Are coaching decisions concerning field goal attempts sufficiently structured to support a propensity-based correction? Specifically, can a multinomial model trained on game-state features predict whether a team will kick with high accuracy?
+2. Does Inverse Probability Weighting (IPW) of observed FG attempts, based on attempt likelihood, improve out-of-sample predictive accuracy relative to an unweighted full GLMM baseline?
+3. Does augmenting the outcome model training set with non-attempt pseudo-labels (assumed misses) improve long-distance calibration and, if so, at what predictive cost?
 
-1. The attempt propensity model will be strongly predictive of observed kick decisions.
-2. M2 will improve in-sample fit by reweighting under-observed difficult attempts.
-3. M1 will remain the strongest out-of-sample predictive model.
-4. M3 will provide directional calibration insight in the tail, but not predictive gains.
-
-## 1.3 Modeling Frame
-
-The manuscript uses a pi-first selection framework. Let $A_i$ denote whether a kick is attempted and $Y_i$ denote kick success when attempted. The decision process is modeled by $\hat{\pi}(X_i)=P(A_i=1\mid X_i)$ over kickable game states. Success models are then compared under three training strategies:
-
-1. M1 baseline mixed model on observed attempts.
-2. M2 weighted mixed model using stabilized and clipped inverse propensity weights.
-3. M3 exploratory augmented training with conservative pseudo-label influence.
-
-This structure separates predictive benchmarking from bias-correction diagnostics.
-
-## 1.4 Preview of Findings
-
-Current evidence from the project artifacts supports the following high-level summary:
-
-1. Attempt propensity is stable and highly predictive across seasons.
-2. M2 improves in-sample fit but does not outperform M1 on held-out prediction.
-3. M3 alters long-distance calibration behavior but degrades predictive metrics versus M1, and therefore remains exploratory.
-
-These findings motivate a two-layer interpretation: M1 as predictive benchmark, M2 as main selection-bias correction attempt, and M3 as secondary robustness analysis.
-
-## 1.5 Paper Roadmap
-
-Section 2 defines data scope, feature engineering, and the attempt propensity workflow. Section 3 specifies M1-M3 model architecture and evaluation metrics. Section 4 reports results in predictive-first order. Section 5 discusses interpretation and deployment implications. Section 6 addresses limitations. Section 7 concludes.
-
-# 2. Data and Pipeline
+# 2. Data
 
 ## 2.1 Data Universe
 
-Planned content:
+Play-by-play data were obtained via the nflfastR R package [@nflfastr] covering the 2015-2025 NFL regular and post-seasons. The in-sample training set comprised 11,548 FG attempts. Blocked kicks were explicitly excluded from both training and evaluation, as they represent a team-level defensive protection outcome rather than individual kicker success or skill.
 
-1. Seasons, play filters, and kickable-state definition.
-2. Treatment of PATs and blocked attempts.
-3. Train/test and rolling-origin framing.
+We trace the exact 4th-down filtering logic: out of 78,563 raw fourth-down situations, filtering for field position within plausible kicking range (kick distance $\leq$ 70 yards) leaves 32,666 plays used as non-attempt situations for propensity model training and M3 augmentation. An additional 14,073 point-after-touchdown (PAT) attempts were used for M3 data augmentation.
+
+A 20% stratified random sample of games (593 games) formed the held-out test set ($n = 2,251$ kicks). This test set contains only actual field goal attempts (not fourth-down non-attempts or PATs) drawn from disjoint games which otherwise maintain player and season overlaps with the training set ($n = 9,297$ training attempts). The analysis spans 11 seasons (2015-2025), covering the modern NFL kicking environment following rule changes that shifted PAT distance.
 
 ## 2.2 Feature Engineering
 
-Planned content:
+The primary distance covariate was encoded as a seven-column cubic B-spline basis using `bSpline()` from the splines2 R package. Interior knots were placed at 28, 38, 48, and 58 yards; boundary knots at 18 and 70 yards; the intercept column was excluded from the spline basis, yielding seven identifiable basis vectors spanning the relevant distance range.
 
-1. Distance splines and geometric covariates.
-2. Weather and venue normalization.
-3. Context features (time, score, leverage, game state).
+Wind speed (mph) and temperature ($^\circ$F) were standardized to z-scores globally across the entire attempted kick set (the training attempts combined) to capture standard environmental difficulty. Surface type (turf vs. grass), precipitation category (rain showers, snow/sleet), game-clock context (clock running, within last two minutes of a half), iced kicker indicator, and playoff indicator were included as binary covariates. Wind effects on kick difficulty were captured via element-wise interactions between wind_z and each of the seven spline basis columns, allowing wind sensitivity to vary nonlinearly with distance.
 
-## 2.3 Attempt Propensity Model
+Stadium-level effects (dome, climate, altitude) were modeled with a stadium random intercept. Kicker ability and season-to-season variation were captured with a nested kicker-season random intercept.
 
-Planned content:
+## 2.3 Weighting Method
 
-1. Multinomial decision model setup (kick vs alternatives).
-2. Rolling-origin out-of-fold generation.
-3. Calibration and effective sample size diagnostics.
+Stabilized inverse probability weights (IPW) were computed for each attempted kick play:
 
-# 3. Methods
+$$w_i^{\text{raw}} = \frac{\bar{\pi}}{\hat{\pi}(X_i)}$$
 
-## 3.1 Success Models
+where $\bar{\pi}$ is the marginal FG attempt prevalence over all plays, and $\hat{\pi}(X_i)$ is the clipped propensity score.
 
-Planned content:
+The weight-building process follows a formal 5-step pipeline:
 
-1. M1 baseline mixed model specification.
-2. M2 IPW-weighted specification and clipping/stabilization.
-3. M3 exploratory pseudo-label variants and guardrails.
+1. **Clipped propensity**: Propensity scores are clipped to the $[0.02, 0.98]$ interval to avoid arithmetic division errors.
+2. **Raw weights**: Compute stabilized IPW case weights.
+3. **Hajek normalization**: Normalize weights within each season so that the mean equals one.
+4. **Three-sigma cap**: Limit extreme weight outliers by capping at three standard deviations above the seasonal mean ($\bar{w}_s + 3\sigma_{w,s}$).
+5. **Final renormalization**: Renormalize capped weights per season to maintain a mean weight of 1.0.
 
-## 3.2 Estimands and Evaluation Metrics
+The resulting case weight, `weight_multinom_hajek`, concentrates weight on long-range, weather-degraded, or contextually unfavorable attempts that coaches selectively avoid, correcting the under-representation of those conditions in the raw sample. As shown in the weight-vs-distance visualization below, kick distance is the primary determinant of weight magnitude, with longer kicks receiving larger weights because they are less likely to be attempted. Environmental factors (wind, temperature) and game-state context introduce further variance around this distance trend. The propensity model used to estimate these attempt probabilities is described in the following section.
 
-Planned content:
+![](../../reports/figures/weights_vs_distance.png)
 
-1. Predictive metrics: Brier, log loss, AUC, threshold metrics.
-2. Calibration diagnostics by distance and game context.
-3. In-sample versus out-of-sample claim policy.
 
-## 3.3 Inference and Robustness Policy
+# 3. Attempt Propensity Model
 
-Planned content:
+## 3.1 Decision Framework
 
-1. Why M3 is classified as exploratory.
-2. Criteria for claiming predictive improvement.
-3. Tail-only interpretive diagnostics.
+The coaching choice on fourth down represents a three-option decision landscape: attempt a field goal, punt, or "go for it" (defined as choosing to run a pass or rush play on fourth down). Formally, let $D_i \in \{\text{FG}, \text{Punt}, \text{Go}\}$ denote the coaching decision on play $i$. The attempt propensity model estimates the conditional probability of each decision given the game-state feature vector $X_i$:
 
-# 4. Results
+$$P(D_i = d \mid X_i), \quad d \in \{\text{FG}, \text{Punt}, \text{Go}\}$$
 
-## 4.1 Attempt Selection Structure
+The quantity of interest for the IPW framework is $\hat{\pi}(X_i) = P(D_i = \text{FG} \mid X_i)$, the estimated probability that a field goal is attempted.
 
-Planned content:
+## 3.2 Model Specification
 
-1. Propensity model strength by season.
-2. Rationality and overlap diagnostics.
-3. Strategic decision frontier context.
+A multinomial logistic regression was fitted using the `nnet::multinom` function in R, with "go for it" as the reference category. The model predicts the log-odds of each non-reference category (FG, Punt) relative to "go for it."
 
-## 4.2 Predictive Benchmark: M1 vs M2
+The feature set includes:
 
-Planned content:
+- **Field position**: A cubic B-spline basis on kick distance with interior knots at 25, 35, 45, and 55 yards and boundary knots at 15 and 70 yards, yielding seven basis columns.
+- **Time remaining**: A natural cubic spline on `game_seconds_remaining` with 4 degrees of freedom, capturing the nonlinear effect of game clock on coaching urgency.
+- **Quarter-time interactions**: Log-transformed quarter seconds remaining interacted with second-quarter and fourth-quarter indicator flags, capturing the heightened time sensitivity in end-of-half and end-of-game situations.
+- **Yards to go**: `ydstogo`, reflecting the conversion difficulty that drives the go-for-it vs. kick tradeoff.
+- **Score state**: Binary indicators for game-state categories, including go-ahead (within 2 points), to-tie (down by 3), one-score-down (down 4-8), extend-lead (ahead by 1+), and two-score-down (down 9-11).
+- **Venue and weather**: Indicators for indoor stadium, turf surface, and high altitude.
+- **Game leverage**: A standardized leverage metric (`leverage_z`) representing the difference between predicted post-kick win probabilities of making and missing a field goal, derived from custom fractional-logit models with logical endgame rule overrides.
+- **Wind and temperature**: Standardized z-scores for wind speed and temperature.
 
-1. In-sample fit comparison (M2 advantage).
-2. Held-out global and 50+ comparison (M1 advantage).
-3. Interpretation of the correction-versus-prediction tradeoff.
+The full model formula is:
 
-## 4.3 Exploratory Robustness: M3
+$$\log\frac{P(D_i = d)}{P(D_i = \text{Go})} = \alpha_d + \sum_{k=1}^{7} \beta_{d,k}\, b_k(\text{dist}_i) + \sum_{j=1}^{4} \gamma_{d,j}\, \text{ns}_j(t_i) + \delta_{d}\, \text{ydstogo}_i + \boldsymbol{\theta}_d^\top \mathbf{S}_i + \boldsymbol{\phi}_d^\top \mathbf{V}_i + \psi_d\, L_i + \text{time interactions}$$
 
-Planned content:
+where $b_k$ are B-spline basis functions evaluated at kick distance, $\text{ns}_j$ are natural spline basis functions evaluated at game seconds remaining $t_i$, $\mathbf{S}_i$ is the vector of score-state indicators, $\mathbf{V}_i$ contains venue/weather indicators, and $L_i$ is game leverage. Each non-reference category $d \in \{\text{FG}, \text{Punt}\}$ has its own set of coefficients.
 
-1. Pseudo-label design grid and weighting sensitivity.
-2. Evidence that predictive metrics do not improve over M1.
-3. Why M3 remains a secondary analysis.
+## 3.3 Training Protocol
 
-## 4.4 Distance-Tail Diagnostics
+A rolling-origin training protocol with a three-season window produced out-of-fold (OOF) predictions for each held-out season. For each target season $s$ (from 2015 onward), the model was trained on all fourth-down plays from seasons $\{s-3, s-2, s-1\}$ and predicted on season $s$. This protocol prevents propensity score leakage into the outcome models and allows the propensity model to adapt to era-level shifts in coaching behavior over the 11-season sample.
 
-Planned content:
+## 3.4 Propensity Model Results
 
-1. 45-55 yard behavior and optimism/pessimism framing.
-2. 50+ calibration shift and tail probability interpretation.
-3. Relation to workload and high-weight attempt profiles.
+The propensity model consistently and accurately predicted coaching FG decisions across all 11 seasons (@tbl-propensity-auc). AUC ranged from 0.938 in 2021-2022 to 0.961 in 2015, with a slight downward trend in the post-2020 period, possibly reflecting increased fourth-down conversion attempts as coaches absorbed analytics-driven guidance. The stability of propensity AUC across seasons validates the core assumption of the IPW framework: that attempt selection is a structured, predictable process rather than idiosyncratic noise.
 
-## 4.5 Figures and Tables (Planned)
+| Season | AUC | Brier |
+|-------:|----:|------:|
+| 2015 | 0.961 | 0.076 |
+| 2016 | 0.957 | 0.078 |
+| 2017 | 0.957 | 0.080 |
+| 2018 | 0.957 | 0.081 |
+| 2019 | 0.950 | 0.090 |
+| 2020 | 0.944 | 0.095 |
+| 2021 | 0.938 | 0.100 |
+| 2022 | 0.938 | 0.100 |
+| 2023 | 0.943 | 0.096 |
+| 2024 | 0.941 | 0.098 |
+| 2025 | 0.943 | 0.098 |
 
-Planned figure/table map:
+: Propensity model (multinomial, rolling-origin OOF) AUC and Brier score by season. {#tbl-propensity-auc}
 
-1. Propensity overlap and calibration diagnostics.
-2. M1 vs M2 predictive comparison table (global and 50+).
-3. M3 variant summary table and tail comparison.
-4. Truth/bias curves and distribution overlays.
+The rationality of coaching decisions is further illustrated by the distribution of propensity scores across decision types, demonstrating a clear separation in utility-driven coaching behavior, as shown below:
 
-# 5. Discussion
+![](../../reports/figures/propensity_density_by_decision.png)
 
-## 5.1 What the Models Learn
+Both high-propensity and low-propensity field goal situations conform neatly to expectation and are clearly distinguishable. As will be demonstrated later in the coaching decision-making section, high-propensity situations correspond to shorter field positions, particularly where yards to go exceeds 5 yards, and close, late-game scenarios where a field goal could tie or give a team the lead. Low-propensity situations correspond to long range field goals and two-score deficits where coaches favor punts or 4th down conversions.
 
-Planned content:
 
-1. M1 as strongest predictive benchmark.
-2. M2 as principled correction attempt that improves fit but not test prediction.
-3. M3 as exploratory calibration lens rather than production predictor.
+# 4. Models and Methods
 
-## 5.2 Operational Implications
+## 4.1 Success Models
 
-Planned content:
+All outcome models were fitted using the glmmTMB R package with a logit link. Kick distance was encoded with the B-spline basis $\mathbf{b}(d_i) = (b_1(d_i), \ldots, b_7(d_i))^\top$ described in Section 2.2.
 
-1. Forecasting and decision-support recommendations.
-2. Kicker evaluation and communication strategy.
-3. How to report correction-aware diagnostics without overstating performance gains.
+**M0 (distance baseline):** A fixed-effects-only logistic regression on the B-spline distance basis, with no random effects and no environmental covariates. Serves as the distance-only predictive ceiling.
 
-## 5.3 Why Corrective Models May Not Win Prediction
+$$\text{logit}\bigl(P(Y_i = 1 \mid d_i)\bigr) = \sum_{k=1}^{7} \alpha_k b_k(d_i)$$
 
-Planned content:
+**M1 (full GLMM):** The primary predictive model. Extends M0 with environmental and contextual covariates, wind-by-distance interactions, and two nested random effects:
 
-1. Distribution shift and season-to-season strategy change.
-2. Weight-variance and tail sample constraints.
-3. Missing covariates and residual confounding.
+$$\begin{aligned}
+\text{logit}\bigl(P(Y_i=1 \mid X_i)\bigr) &= \sum_{k=1}^{7}\alpha_k b_k(d_i) + \beta_1 w_i + \beta_2 T_i + \beta_3(w_i \cdot T_i) + \sum_{k=1}^{7}\gamma_k\bigl(w_i \cdot b_k(d_i)\bigr) \\
+&\quad + \beta_4\,\text{turf}_i + \beta_5\,\text{snow\_sleet}_i + \beta_6\,\text{rain\_showers}_i + \beta_7\,\text{clock\_running}_i \\
+&\quad + \beta_8\,\text{iced}_i + \beta_9\,\text{l2m}_i + \beta_{10}(\text{clock\_running}_i \cdot \text{l2m}_i) + \beta_{11}\,\text{playoffs}_i \\
+&\quad + u_{s(i)} + v_{g(i)}
+\end{aligned}$$
 
-# 6. Limitations
+where $b_k(d_i)$ is the $k$-th B-spline basis function at distance $d_i$ (interior knots 28/38/48/58 yds, boundary knots 18/70 yds); $w_i$ = standardized wind speed; $T_i$ = standardized temperature; $u_{s(i)} \sim N(0, \sigma_s^2)$ is a kicker-season random intercept; $v_{g(i)} \sim N(0, \sigma_g^2)$ is a stadium random intercept.
 
-Planned content:
+**M2 (IPW-weighted GLMM):** The M1 formula fitted with case weights $w_i^H$ (Hajek-normalized, $3\sigma$-capped stabilized propensity weights, as defined in Section 2.3). By upweighting rare difficult attempts, M2 is designed to estimate probabilities closer to the population-average distribution rather than the coaching-selected attempt distribution.
 
-1. Observational design and non-causal interpretation.
-2. Sensitivity to pseudo-label rules and weighting choices.
-3. Sparse extreme-distance regimes and uncertainty inflation.
+**M3 (augmented GLMM):** The M1 formula fitted on a training set augmented with PAT attempts (treated as pseudo-successes with `aug_weight` = 0.10) and non-attempt fourth-down situations (treated as pseudo-misses with `aug_weight` = 0.10), restricted to plays with estimated propensity $\geq 0.25$ and distance $\geq 33$ yards. M3 is classified as exploratory throughout.
 
-# 7. Conclusion
+**M2-pop (population marginal, for FGOE):** The M1 formula minus the kicker-season random intercept $u_{s(i)}$, fitted with M2 IPW weights. The stadium random effect $v_{g(i)}$ is retained. This model estimates the population-average kick probability for a given context $X_i$, independent of individual kicker ability, and serves as the context-neutral baseline for computing FGOE (Section 6).
 
-Planned content:
+## 4.2 Evaluation Metrics
 
-1. Final statement on predictive ranking (M1 first).
-2. Role of M2 as best correction attempt for selection bias diagnostics.
-3. Role of M3 as exploratory robustness only.
-4. Next-step roadmap for expanded validation and manuscript submission.
+Primary predictive metrics are Brier score (lower is better) and AUC (higher is better), computed separately on the in-sample (IS) training set and the held-out test set (OOS). Secondary metrics include log-loss and calibration error by distance band: the mean absolute difference between the observed make rate and the mean predicted probability within five distance bands (<30, 30-39, 40-49, 50-59, 60+ yards).
 
-# Appendix A. Artifact-to-Section Mapping
+**IS vs. OOS claim policy:** A model is claimed to improve on M1 only if it achieves a strictly lower Brier score on the held-out test set. In-sample Brier improvements alone are treated as descriptive evidence of bias correction, not predictive improvement.
 
-This manuscript section will map each reported figure and table to source artifacts in the reports and notebooks directories, including exact file names used to generate each displayed result.
+## 4.3 Inference and Robustness Policy
 
-# Appendix B. Citation Backlog
+M3 is classified as exploratory because it does not achieve a lower OOS Brier score than M1 under any tested weighting configuration (Section 5.3). Distance-band calibration diagnostics (Section 5.4) are interpreted as directional evidence only, not as formal inference. The 60+ yard band contains $n = 77$ in-sample observations, so point estimates in this cell carry high uncertainty. All evaluation is restricted to non-blocked FG attempts.
 
-The current bibliography is a placeholder. Before submission, add core references for:
+# 5. Modeling Results
 
-1. Selection bias and inverse probability weighting.
-2. AIPW and doubly robust evaluation.
-3. Sports expected-value modeling and NFL decision analytics.
-4. Mixed-effects modeling references for hierarchical binary outcomes.
+## 5.1 Predictive Benchmark: M1 vs. M2
 
+The in-sample (IS) metrics reported throughout this section are calculated over the full dataset ($n = 11{,}548$) using predictions from the models fitted on the full dataset (Option B). For the augmented model (M3), these metrics are evaluated exclusively on actual field goal attempts, omitting the PAT and non-attempt pseudo-labels used during training. All reported Brier scores are standard, unweighted metrics to maintain direct comparability.
+
+@tbl-model-metrics presents global predictive metrics on the IS and OOS splits for all four models. M2 achieves the best IS fit (Brier 0.0984, AUC 0.805). On the OOS test set, M1 outperforms all models (Brier 0.1007, AUC 0.769). M2 OOS Brier (0.1029) exceeds even M0 (0.1012), confirming that IPW variance inflation from extreme long-range weights is not recoverable in the 2,251-observation test set. These global behaviors are further reflected in the in-sample and test set calibration curves:
+
+| Model | IS Brier | IS AUC | OOS Brier | OOS AUC |
+|---|---:|---:|---:|---:|
+| M0 (distance only) | 0.1045 | 0.774 | 0.1012 | 0.762 |
+| M1 (full GLMM) | 0.1001 | 0.804 | **0.1007** | **0.769** |
+| M2 (IPW) | **0.0984** | **0.805** | 0.1029 | 0.760 |
+| M3 (augmented) | 0.1010 | 0.801 | 0.1017 | 0.767 |
+
+: Model performance on in-sample (IS, $n = 11{,}548$) and held-out test set (OOS, $n = 2{,}251$). Brier: lower is better. AUC: higher is better. Blocked kicks excluded. Bold indicates best value in column. {#tbl-model-metrics}
+
+The separation density illustrates the in-sample distribution of predicted probabilities for made vs. missed kicks across models, indicating how well M1 and M2 distinguish outcomes:
+
+![](../../reports/figures/separation_density.png)
+
+M2 pushes low-probability kicks leftward, clarifying the distinct separation profile for missed kicks.
+
+## 5.2 Distance-Tail Diagnostics
+
+| Distance Band | Sample Count (N) | M0 | M1 | M2 | M3 |
+|---|---|---:|---:|---:|---:|
+| < 30 yds | 3,017 | 0.0171 | 0.0170 | 0.0171 | 0.0170 |
+| 30-39 yds | 3,314 | 0.0624 | 0.0610 | 0.0615 | 0.0613 |
+| 40-49 yds | 3,407 | 0.1643 | 0.1575 | **0.1572** | 0.1582 |
+| 50-59 yds | 1,733 | 0.2141 | 0.2032 | **0.1919** | 0.2047 |
+| 60+ yds | 77 | 0.2249 | 0.2125 | **0.1640** | 0.2182 |
+
+: In-sample Brier score by distance band. Lower is better. Bold: best value in row. {#tbl-dist-brier}
+
+M2 achieves a 5.6% Brier reduction versus M1 at 50-59 yards and a 22.8% reduction at 60+ yards in-sample.
+
+The models diverge at 50+ yards, where the IPW correction in M2 has the most leverage. However, the 60+ yard distance band contains only $n = 77$ in-sample observations, meaning point estimates in this range carry high uncertainty.
+
+To evaluate model performance across the distance spectrum, we examine continuous squared residuals (Brier error) smoothed using a LOESS fit, side-by-side for in-sample training and out-of-sample test data:
+
+![](../../reports/figures/brier_comparison_is_oos.png)
+
+In-sample, M2 achieves lower squared error than M1 at long distances, demonstrating the effect of the IPW correction. However, out-of-sample, the error curves cross, and M1 outperforms M2, confirming that M2's fit to tail noise in the training set does not generalize.
+
+## 5.3 Exploratory Robustness: M3
+
+M3 was evaluated across a grid of symmetric PAT and non-attempt pseudo-label weights. Across all configurations, M3 did not achieve a lower OOS Brier score than M1, confirming its exploratory classification. Heavier augmentation weights slightly degrade even in-sample fit as non-attempt pseudo-labels introduce noise at medium distances. The primary configuration (weight = 0.10) produced OOS Brier 0.1017, which underperforms M1 but improves upon M2 OOS. M3 is retained as an exploratory lens for long-distance tail behavior but should not be used as a production predictor.
+
+| PAT/Non Weight | IS Brier | IS AUC | IS Calib. Error |
+|---:|---:|---:|---:|
+| 0.05 | 0.1007 | 0.802 | 0.0139 |
+| 0.10 | 0.1009 | 0.801 | 0.0170 |
+| 0.25 | 0.1015 | 0.802 | 0.0286 |
+
+: M3 weight sensitivity grid (PAT weight = Non-attempt weight). IS metrics only; OOS Brier for the primary 0.10 configuration is 0.1017. {#tbl-m3-grid}
+
+# 6. FGOE and Player Evaluations
+
+FGOE is a per-kick residual metric that quantifies how much a kicker outperformed (or underperformed) the context-neutral expected make probability. Over the 11-season period analyzed (2015-2025), FGOE is defined as:
+
+$$\text{FGOE}_i = Y_i - \hat{p}_{\text{M2-pop}}(X_i)$$
+
+where $\hat{p}_{\text{M2-pop}}(X_i)$ is the M2-pop predicted probability for kick $i$. The M2-pop model removes the kicker-season random intercept from M2, so $\hat{p}_{\text{M2-pop}}$ reflects the population-average probability for a kick of context $X_i$ at a league-average venue, independent of individual kicker ability. This design ensures that FGOE is attributable to the kicker rather than confounded by stadium effects.
+
+Cumulative FGOE over a kicker-season $(k, s)$ is:
+
+$$\text{FGOE}_{k,s} = \sum_{i:\,\text{kicker}=k,\,\text{season}=s} \text{FGOE}_i$$
+
+A kicker with $\text{FGOE}_{k,s} > 0$ made more kicks than the context-adjusted baseline predicted; $\text{FGOE}_{k,s} < 0$ indicates underperformance. Unlike raw make rate, FGOE is adjusted for distance distribution, weather, and surface, making it a fairer basis for cross-kicker comparison.
+
+The FGOE leaderboard ranks kicker-seasons by cumulative FGOE. Top-ranked kicker-seasons are concentrated among kickers with consistently high make rates across a variety of distance and weather profiles, not simply those who attempted the most kicks. The career-level FGOE rankings can be visualized in the total and efficiency leaderboards:
+
+![](../../reports/figures/fgoe_leaderboard.png)
+
+![](../../reports/figures/fgoe_rate_leaderboard.png)
+
+The skill-vs-workload scatter confirms that high-FGOE kickers appear across workload levels, suggesting FGOE captures ability independently of attempt volume:
+
+![](../../reports/figures/skill_vs_workload_scatter.png)
+
+To examine this workload distribution itself, we plot average attempt distance against the mean propensity to attempt kicks:
+
+![](../../reports/figures/kicker_workload_propensity.png)
+
+This visual demonstrates a clear negative relationship: kickers who average longer-range attempts also face a lower mean attempt propensity (and consequently higher average IPW weights). This highlights how FGOE controls for the selective difficulty distribution faced by trusted kickers.
+
+# 7. Field Goal Kicking Trends
+
+A major influence on the coaching decision framework has been the steady improvement in kicker accuracy and range over the past decade. Average field goal attempt distances have risen, and the share of attempts from beyond 50 yards has grown substantially. This shift is visible in the season-level kicking trends below, with the 2015-2025 modeling period shaded:
+
+![](../../reports/figures/season_kicking_trends_detailed.png)
+
+The average field goal attempt distance has steadily increased over time, climbing by nearly 5 yards since 2000. While overall make rates improved consistently up to 2015 (the beginning of the modeling period), they have largely stabilized since. This stabilization has occurred despite the ongoing rise in average kick distance, particularly for attempts from 50 yards or more, which have increased substantially since the 2020 season. Kickers have maintained their overall accuracy and even demonstrated continued improvement on 50-plus yard kicks, converting longer and more difficult attempts on average. Given the distinct shift in attempt frequency and accuracy for deep kicks starting around 2020, subsequent visual analyses are partitioned into pre-2020 and post-2020 eras.
+
+As kickers have improved, the distribution of field goal attempt distances has shifted rightward over the study period:
+
+![](../../reports/figures/kick_distance_distribution_15vs25.png)
+
+To further illustrate how the kicking environment has changed, the make rate by distance across eras shows that post-2020 kickers convert at higher rates from long range relative to the pre-2020 period:
+
+![](../../reports/figures/make_rate_by_distance_era.png)
+
+These improvements in kicker capability have shifted the boundaries of what coaches consider a viable attempt, changing the composition of the observed kick sample over time.
+
+## 7.1 Decision Evolution by Yardage Context
+
+Coaching fourth-down decisions are not driven by a single universal calculus. The strategic trade-offs differ substantially depending on how many yards remain to gain a first down, which is entirely distinct from kick distance or field position. To capture this, we split fourth-down situations by whether the team faces a long-yardage situation (5 or more yards to go) or a short-yardage situation (4 or fewer yards to go):
+
+![](../../reports/figures/kicking_decision_evolution.png)
+
+On long-yardage fourth downs (5+ yards to go for a first down), punting has historically been and remains the dominant choice when the team is far from field goal range. Inside kicking range, however, field goals have gained share from punts over the observed period as kicker range and accuracy improved. Go-for-it rates on long-yardage downs have not increased dramatically, which is expected: converting 5 or more yards on a single play is a difficult proposition, and the expected value of going for it does not typically exceed the value of a makeable field goal attempt.
+
+On short-yardage fourth downs (4 or fewer yards to go), the story is markedly different. Coaches have dramatically shifted away from both punts and field goals in favor of go-for-it conversion attempts. This shift reflects the analytics-driven recognition that when a conversion is likely (short yardage), the expected value of gaining a first down or touchdown often exceeds the certain-but-limited value of a field goal. The field position decision profiles confirm how these patterns play out across the field:
+
+![](../../reports/figures/decision_by_field_position.png)
+
+Under long-yardage conditions, field goals are the preferred choice inside approximately 35 yards from the end zone, whereas punting dominates at longer distances. Under short-yardage conditions, kicking remains the primary option until about 30 yards from the end zone, with the notable exception of the 1-yard line, where going for it dominates. Go-for-it rates peak around 40 yards from the end zone, where a field goal attempt would require a difficult 55-plus yard kick with a lower conversion probability.
+
+The era comparison for short-yardage situations illustrates how pronounced the post-2020 shift has been:
+
+![](../../reports/figures/short_yardage_decisions_era.png)
+
+Post-2020 coaches are far more likely to go for it on short-yardage fourth downs at almost every field position relative to the pre-2020 era, with field goal and punt rates declining accordingly.
+
+## 7.3 Win Probability Added and the Decision Framework
+
+To analyze how coaching decisions on fourth down align with observed results, we use win probability added (WPA). The WPA curves below compare the average win probability gained from field goals, punts, and go-for-it plays across field positions, split by era:
+
+![](../../reports/figures/wpa_landscape_by_era.png)
+
+WPA from long field goals has increased alongside kicker improvement, and the post-2020 era shows the highest expected WPA from go-for-it plays concentrated around midfield. The differences between eras in the WPA curves, while real, are modest in magnitude, which is consistent with the finding that kicker selection bias does not substantially distort model performance.
+
+Stratifying WPA by yards-to-go regime reveals the distinct decision logic more clearly:
+
+![](../../reports/figures/wpa_by_ytg_regime.png)
+
+When facing a long-yardage fourth down, the field goal is the better-expected-value option until roughly 40 yards from the end zone, where the WPA curves begin to converge. In short-yardage situations, the go-for-it option carries positive WPA across the entire field within 70 yards, and field goal attempts are associated with negative WPA at virtually all distances. This would suggest that even more aggressive short-yardage behavior could be justified by the data, and the post-2020 trend reflects coaches moving in that direction.
+
+The overlay below maps the post-2020 kick attempt density onto the corresponding WPA curve for field goals, illustrating where in the distance distribution coaches are actually operating relative to where the WPA advantage lies:
+
+![](../../reports/figures/kick_density_on_wpa.png)
+
+Coaches' decisions and the expected win probability added display highly consistent patterns across distances. This alignment suggests that coaches possess a structured understanding of the distance thresholds at which field goal attempts contribute positively to win probability, likely driven by a combination of historical intuition and modern analytics. However, the WPA curves also indicate room for greater aggressiveness beyond 45 yards, as the expected WPA for field goals peaks at approximately 55 yards. The rapid improvement in long-range kicking accuracy in recent years suggests that coaching behavior may still be adapting to this enhanced capability. Additionally, the relationship between decisions and expected value is complex; for instance, in short-yardage regimes, conversion attempts are universally superior to field goals, indicating that simple distance-based guidelines are insufficient. Ultimately, this selective coaching process is the exact mechanism that generates the sample selection bias addressed by the inverse probability weighting framework.
+
+# 8. Discussion
+
+## 8.1 Why Corrective Models Do Not Win Out-of-Sample Prediction
+
+The three models encode qualitatively different estimands. M1 estimates the conditional success probability for observed FG attempts, a quantity well-suited to in-game decision support but one that inherits the selection structure of coaching behavior. M2 estimates a reweighted version of the same probability that more closely approximates the population-average probability across all kickable situations, at the cost of higher variance in the long-distance tail. M3 approximates the same population-average target through a different mechanism, namely imputing pseudo-labels for non-attempts, but the pseudo-label mechanism introduces noise that prevents calibration gains from translating into predictive improvement.
+
+We disagree with the conclusion that with more data M2 would eventually outperform M1 out-of-sample. Rather, the out-of-sample failure of M2 demonstrates that selection-bias correction via IPW primarily forces the model to learn from high-variance randomness in the extreme tails. This tail randomness does not generalize to future unseen events. Upweighting long kicks reduces the calibration of out-of-sample medium-distance kicks, which constitute the vast majority of future decisions. Adjusting for the likelihood of an attempt does not improve the model's ability to predict future, unseen events; the biased reality remains the optimal predictor of future outcomes.
+
+## 8.2 Operational Implications
+
+The operational implication is that selection-bias adjustment using these IPW methods does not work for predictive modeling. For real-time win probability or in-game decision support, M1 is the recommended model: it has the strongest OOS predictive performance and does not suffer from the weight-driven variance inflation of M2. For kicker evaluation, however, FGOE derived from M2-pop is the recommended metric because it adjusts for the context distribution under which each kicker was evaluated and corrects for the systematic selection bias in the attempt distribution.
+
+# 9. Limitations
+
+1. **Observational design**: This study is observational, not causal. FGOE and M2-based evaluations describe how kickers performed relative to a selection-adjusted baseline, but cannot identify whether observed differences reflect true skill differences, variation in team context, or measurement noise.
+2. **Pseudo-label sensitivity**: M3 results depend on the PAT weight, non-attempt weight, propensity threshold, and distance threshold used to construct the augmented training set. The parameter grid evaluated in Section 5.3 provides evidence of robustness within a reasonable range, but the exploratory classification of M3 reflects genuine sensitivity to these design choices.
+3. **Sparse 60+ yard regime**: The 60+ yard distance band contains only $n = 77$ in-sample observations. The 22.8% Brier reduction for M2 at 60+ yards carries high uncertainty and should be interpreted as directional evidence rather than a precise estimate.
+4. **Single-league scope**: The analysis is restricted to NFL data. The generalizability of the propensity model structure, the IPW weight distribution, and the FGOE evaluation framework to other levels of football (college, CFL) or other sports with similar coaching selection structures has not been tested.
+
+# 10. Conclusion
+
+NFL field goal modeling is a selection problem as well as a prediction problem: coaches choose when to attempt kicks, and models trained only on observed attempts inherit the resulting sample bias. Applying inverse probability weighting corrects this bias in-sample and produces substantially better-calibrated predictions at long distance, achieving a 22.8% Brier reduction at 60+ yards versus the unweighted baseline, but does not improve out-of-sample global prediction, where the full GLMM (M1) remains the stronger model. For practitioners, the recommended deployment is M1 for in-game prediction and decision support, with M2 informing selection-bias diagnostics, and the M2-pop-based FGOE metric providing a principled, context-adjusted framework for kicker evaluation. Future work should explore doubly robust estimators as alternatives to pure IPW that may better balance bias correction with predictive stability.
+
+# References
+
+::: {#refs}
+:::

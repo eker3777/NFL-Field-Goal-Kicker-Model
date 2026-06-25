@@ -1,52 +1,79 @@
 # NFL Field Goal Kicker Model
 
-## Project Vision
-- Build a **notebook-first** workflow where every stage of the kicker modeling pipeline can run directly from an R (IRkernel) Jupyter notebook.
-- Preserve the legacy exploratory work under `Reference/` as read-only context for data lineage and sanity checks.
-- Prioritize transparency: each notebook declares its own defaults, utilities, and artifacts so it can be executed independently without relying on external packages or modules beyond CRAN libraries.
+This repository contains the replication code, data placeholders, figures, and Quarto manuscript source files for the paper: **"Here's the Kicker: Correcting Selection Bias in NFL Field Goal Models via Inverse Probability Weighting"**.
 
-## Pipeline Roadmap
-| Notebook | Focus | Key Notes |
-| --- | --- | --- |
-| `01_data_prep.ipynb` | Carry forward and modernize the data preparation steps from the reference notebooks. | Cleans, joins, and engineers baseline features for kickable plays. |
-| `02_attempt_pi.ipynb` | Estimate attempt propensity \(\pi(X) = P(\text{FG attempt} \mid X)\). | Rolling-origin out-of-fold predictions across 2015–2024 with stabilized, clipped weights and effective sample size diagnostics. |
-| `03_xwp_modules.ipynb` | **Optional / paused** xWPA and conversion modules. | Placeholder scaffolding for future work on WP deltas and conversion rates (not required for the π-only core). |
-| `04_xfg_success_ipw.ipynb` | Fit success models M1 (baseline) and M2 (IPW + control-function). | Cloglog `glmmTMB` models for kicks, treating blocks as misses and setting PAT weights to 1. Includes a template for the optional M3 pseudo-label experiment. |
-| `05_aipw_eval.ipynb` | Evaluate the models with AIPW pseudo-outcomes. | Builds the full kickable decision set, computes AIPW outcomes, and prepares calibration/Brier diagnostics. |
-| `06_reporting_views.ipynb` | Package results for consumers. | Creates predictive (operational) and standardized skill views; standardized view drops the control-function covariate. |
+The project investigates how to address selection bias in observed field goal attempts—since coaches selectively attempt field goals under favorable game states—using Inverse Probability Weighting (IPW) and data augmentation.
 
-> **PAT Handling:** PATs enter the pipeline with \(\hat{\pi} = 1\Rightarrow w = 1\). Blocks are always recorded as misses. Weight clipping defaults to `[0.05, 0.98]` with stabilized means near 1.0.
+---
 
-## Notebook-First Conventions
-- Each notebook starts with a header markdown cell summarizing purpose, inputs, outputs, and quick links.
-- `SMOKE_MODE <- TRUE` by default for fast sanity checks on the sample CSVs under `Reference/`. Toggle to `FALSE` for full modeling runs.
-- Default parameters live inside the notebooks (`time_knots`, `late_flags`, clipping bounds, spline degrees of freedom, etc.). If `config/params.yaml` exists, overrides are merged, but notebooks never depend on it.
-- A dedicated "Utilities & Helpers" cell holds lightweight helper functions (≤40 lines each) for feature engineering, weighting, calibration, and plotting.
-- The final cell in every notebook writes `sessionInfo()` to `reports/session_info.txt` so downstream consumers can audit package versions.
+## 1. Project Overview & Pipeline Roadmap
 
-## Getting Started in VS Code
-1. Install R and the [IRkernel](https://irkernel.github.io/installation/).
-2. Clone the repository and open it in VS Code with the Jupyter extension enabled.
-3. Open any notebook under `notebooks/` (start with `01_data_prep.ipynb`).
-4. Ensure the first code cell reads `SMOKE_MODE <- TRUE` for fast execution against the `Reference/` samples.
-5. Run all cells. Artifacts (CSV summaries, diagnostic placeholders, etc.) are written to `reports/` and ignored by git by default.
-6. When ready for full seasons, set `SMOKE_MODE <- FALSE`, provide raw data under `data/`, and (optionally) add overrides in `config/params.yaml`.
+The workflow is structured as a sequential **notebook-first** pipeline in R (using the IRkernel in Jupyter). Each stage can be executed independently (loading intermediate CSV artifacts) or run end-to-end.
 
-## Repository Layout
+| Notebook | Focus | Key Deliverables / Artifacts |
+| :--- | :--- | :--- |
+| [`01_data_prep.ipynb`](notebooks/01_data_prep.ipynb) | modernizes and prepares nflfastR play-by-play data. | Cleans, joins, and engineers baseline features for all kickable plays and actual attempts. Writes `fg_all.csv` and subset files under `data/`. |
+| [`02_propensity.ipynb`](notebooks/02_propensity.ipynb) | Estimates attempt propensity $\pi(X) = P(\text{attempt} \mid X)$. | Fits a rolling-origin multinomial classifier across all 4th down plays ($n = 32{,}666$ plays). Computes stabilized, clipped IPW weights. |
+| [`03_models.ipynb`](notebooks/03_models.ipynb) | Fits success outcome models M0, M1, M2, M3. | Fits distance-only (M0), baseline GLMM (M1), IPW-weighted GLMM (M2), and data-augmented pseudo-label GLMM (M3) models. Outputs predictions to `fg_full_with_predictions.csv` and model coefficients. |
+| [`04_evaluation.ipynb`](notebooks/04_evaluation.ipynb) | Computes global and distance-band metrics. | Calculates Brier scores, AUC, log-loss, and calibration error across models for in-sample (full-dataset, Option B) and out-of-sample (test-split) evaluations. Writes `metrics_table.csv`. |
+| [`05_visuals.ipynb`](notebooks/05_visuals.ipynb) | Generates all manuscript figures. | Creates and saves diagnostic curves (calibration, separation density, tail density, win probability added, and attempt propensities) directly referenced in the paper. |
+
+---
+
+## 2. Repository Layout
+
 ```
-Reference/           # Legacy notebooks & sample CSVs (read-only)
-notebooks/           # Primary modeling workflow (IRkernel notebooks)
-data/.keep           # Placeholder for local data (git-ignored)
-reports/.keep        # Placeholder for generated artifacts (git-ignored)
-config/params.yaml   # Optional parameter overrides (never required)
+├── Paper/
+│   ├── Field_Goal_Kicking_IPW/
+│   │   ├── index.qmd             # Quarto paper source manuscript
+│   │   ├── index.pdf             # Compiled PDF of the paper
+│   │   ├── references.bib        # BibTeX bibliography
+│   │   └── _quarto.yml           # Quarto manuscript configuration
+│   └── References/               # Academic papers and reference material
+├── config/
+│   └── params.yaml               # Optional pipeline parameter overrides
+├── data/
+│   └── .keep                     # Data folder placeholder (actual CSVs are git-ignored)
+├── notebooks/
+│   ├── 01_data_prep.ipynb        # Data preparation stage
+│   ├── 02_propensity.ipynb       # Propensity modeling stage
+│   ├── 03_models.ipynb           # Model fitting stage
+│   ├── 04_evaluation.ipynb       # Evaluation stage
+│   └── 05_visuals.ipynb          # Visual analytics & figures stage
+├── reports/
+│   ├── .keep                     # Reports folder placeholder
+│   └── figures/                  # Final generated manuscript figures (git-tracked)
+├── README.md                     # Project documentation
+└── .gitignore                    # Git ignore configurations
 ```
 
-## Reporting Views
-- **Predictive (Operational):** Uses the IPW + control-function model (M2) on application data to describe current decision quality and calibration.
-- **Standardized Skill:** Re-scores kickers on a reference state grid without the control-function covariate to compare underlying execution skill across common scenarios.
+---
 
-Both views rely on the π-only core; the xWPA notebook remains optional/paused until the win-probability modules are revisited.
+## 3. Getting Started
 
-## Next Steps
-- PR#2 will implement the full rolling-origin attempt propensity workflow (`02_attempt_pi.ipynb`) and flesh out success models (`04_xfg_success_ipw.ipynb`).
-- PR#3 will focus on AIPW evaluation, reporting views, and ensuring `SMOKE_MODE` delivers fast end-to-end smoke tests.
+### Prerequisites
+1. Install **R** and the **IRkernel** so Jupyter can run R notebooks.
+2. Install the following R packages:
+   ```R
+   install.packages(c("dplyr", "tibble", "tidyr", "readr", "stringr", "purrr",
+                      "ggplot2", "ggrepel", "scales", "patchwork", "pROC", "glmmTMB"))
+   ```
+3. Install **Quarto** if you wish to recompile the paper manuscript.
+
+### Running the Pipeline
+1. Clone this repository.
+2. Provide raw nflfastR play-by-play data under the `data/` directory (or use default sample variables if running in smoke test mode).
+3. Execute the notebooks in `notebooks/` in sequential order (`01_data_prep.ipynb` through `05_visuals.ipynb`).
+4. Recompile the manuscript:
+   ```bash
+   cd Paper/Field_Goal_Kicking_IPW
+   quarto render index.qmd --to pdf
+   ```
+
+---
+
+## 4. Key Findings
+
+- **In-Sample descriptive fit**: Reweighting attempts via IPW (M2) significantly reduces calibration errors on the upweighted long-distance kicks, achieving a **22.8% Brier score reduction** at 60+ yards and a **5.6% Brier score reduction** at 50-59 yards versus M1 in-sample.
+- **Out-of-Sample generalization**: On held-out test data, M1 (Brier 0.1007, AUC 0.769) outperforms the corrective M2 model (Brier 0.1029, AUC 0.760), indicating that the tail variance fit by IPW does not generalize to future unseen attempts.
+- **Strategic applications**: We introduce **Field Goal Outcome Expectation (FGOE)**, calculated using a population-marginal version of the IPW model (`M2-pop`), as a more robust kicker evaluation metric.
