@@ -1,0 +1,42 @@
+---
+title: "Review of Here's the Kicker"
+format: html
+---
+
+# To the editor
+
+This is a nice paper. It needs some modifications before publication, but I think they're pretty doable, and I recommend moving on to the reproducible stage once the authors agree to these fixes. The review instructions did not say what format to submit reviews in, so I submitted QMD, Which seems like it may be the most useful format given the workflow the journal has set up 
+
+# To the authors 
+
+This is a nice paper studying selection bias in NFL field goal models and could potentially be suitable for publication in JSDSS with some modifications. Below are some main comments to address, along with some minor comments and suggestions for improvement.
+
+## Main Comments
+
+**Causal inference.** The paper Reads as very casual, but that does not explicitly perform causal inference or use common terminology in that field (other than IPW). This is discussed somewhat in Section 9, Number 1. What are the main differences between this and a fully causal approach? What would need to be done for a fully causal inference approach to the problem? Does your approach have any benefits or drawbacks to a causal inference approach? 
+
+**Data exploration.** There was a lot of nice data visualization given in Section 7. I suggest moving data exploration based on raw data (as opposed to model results) earlier in the paper. It would be helpful for motivating the propensity model, for example, if the reader could better understand how coaches have been making decisions over the past ten years. 
+
+**Propensity changes over time.** Related to the previous point, data exploration shows that coaching decisions have changed throughout recent seasons, perhaps because decisions are more based on data. This seems to suggest that the propensity model should take into consideration season in some way in order to most appropriately model how decisions were being made and how that has changed over time.  In addition, you may find that you have a different answer to the selection bias question for earlier seasons versus late seasons. 
+
+**M3.** A few comments here:
+
+- The motivation behind this could be explained in a little more detail. Presumably, the reason to include, for example, PATs is that the model would have less uncertainty around the field goals at distances that are similar to a typical PAT. 
+- Why were the cutoffs propensity >= 0.25 and distance >= 33 yards chosen? 
+- Classifying non-attempts on fourth down as pseudo-misses seems unfair. They may have been attempted because the prob is .3, not 0, and they could have been not attempted for other reasons related to game context. 
+- Likewise, classifying P.A.T. attempts as pseudo successes seems slightly unfair since observed success rate is .9x (for some x, not sure of the number), not 1.
+
+As the author has mentioned, M3 is classified as "exploratory" and is not necessarily imperative for answering the main question of the paper. But I think these suggestions would help improve the motivation for implementation of M3.  
+
+**M2-pop and FGOE.** Instead of using a new model M2-pop, it seems like you could use M2 while setting kicker coefficients to zero to achieve the same result. Then in Section 6: you could compare with and without the kicker coefficients. This may give similar results, but I worry that not having the kicker in M2 pop will result in a bias for longer distances.  
+
+## Other comments
+
+- **Humidity.** I would guess that humidity would impact field goal success rate. If your weather data set has that, I suggest including it. 
+- **Weather.** What is the relationship between the weather variables and probability of success? It seems to me that these might not be non-linear based on physics formulas. It might be worth thinking about this more. 
+- Is number 3 in 2.3 needed, given that number 5 does another renormalization? 
+- Expected points and win probability are often used to inform the go-for-it-on-fourth-down decision, and could potentially be used in your propensity model. You could consider creating or using an existing win probability or expected points model. If you don't use one of those, explain why you chose not to. 
+- The figure on the top of page nine and some other figures are not numbered. 
+- I recommend including log loss in, for example, Table 1 and other places, since it's a fairly commonly used metric for measuring in-sample and out-of-sample predictive performance. 
+- There is no text between, for example, sections 4 and 4.1 and sections 5 and 5.1. 
+- Can you show a calibration plot so we can see how close to the diagonal predicted probabilities are? 
