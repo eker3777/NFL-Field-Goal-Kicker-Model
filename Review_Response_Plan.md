@@ -24,6 +24,11 @@ the manuscript's numeric tables should not be updated until the local run is com
   **drop** the wind×distance-spline interactions; keep `rain`/`snow` as binary flags.
 - Humidity: add to the outcome model and to the paper formula.
 - M2→M3 relabel and major narrative re-org: **deferred**, pending co-author input.
+- **Non-attempt pseudo-labels: keep the binary (0/1) labels** and defend in writing (author's stated
+  instinct; soft/fractional labels raised with the co-author but not adopted). Proceed without waiting.
+- **Non-causal reframe / estimand language: assigned to the co-author** (see §1.3). We scrub
+  overclaiming prose now and leave a reserved placeholder; we do not draft the estimand paragraph.
+- Co-author response is **not a blocker** for anything else in this plan — proceed with all other items.
 
 ---
 
@@ -78,18 +83,40 @@ These five are **not** executed in this pass by author instruction.
   and an exhaustive weighting search (separate notebook) found no scheme beating M1. (Soft-label
   alternative is raised in the co-author email, not adopted here.)
 
-### 1.3 Reframe the paper as explicitly non-causal
-- **Where:** §9 item 1 (promote and expand); add a short paragraph in §8.1 or a new §9 note.
-- **Do:**
-  - Replace casual/causal-sounding phrasing with estimand-precise language (we estimate a
-    **selection-reweighted / population-marginal success probability**, not a counterfactual).
-  - Add an explicit contrast: a **fully causal** treatment would require a defined counterfactual
-    estimand (e.g. `E[Y(attempt)]` over all kickable plays), and the identification assumptions —
-    positivity/overlap, no unmeasured confounding of the attempt decision (conditional ignorability),
-    and SUTVA. Note which we can/can't defend.
-  - State benefits/drawbacks of our approach vs. a causal one: IPW reweighting gives a transparent,
-    low-assumption population-marginal baseline useful for evaluation, but does **not** identify a
-    causal effect and should not be read as one.
+### 1.3 Non-causal reframe — **reserved for co-author (M. Schuckers)**
+
+**Split of labor:** the *estimand paragraph itself* is being written by the co-author. We do the
+supporting scrub now so the section drops cleanly into an otherwise-consistent manuscript.
+
+**1.3a — What we do now (safe, no co-author input needed):** scrub causal-sounding overclaims
+throughout the body so the prose doesn't assert more than the method supports. Specific passages to
+soften and re-word:
+- §1.1 Motivation — "could introduce bias into models", "coaches who trust their kicker's range may
+  assign more difficult kicks": keep as motivation but mark clearly as hypothesis, not finding.
+- §8.1 — "the out-of-sample failure of M2 **demonstrates** that selection-bias correction ... forces
+  the model to learn from high-variance randomness": soften to what the evidence supports
+  (associational/descriptive), since we did not identify a mechanism.
+- §10 Conclusion — "Applying inverse probability weighting **corrects this bias** in-sample":
+  reword to "reweights the observed sample toward the population of kickable situations."
+- Abstract — "Coaching selection bias does not appear to meaningfully impact the predictability of
+  kick success": acceptable but ensure it reads as a predictive-performance statement, not a causal one.
+
+**1.3b — Placeholder to insert (co-author fills):** add a clearly-marked stub so the section exists
+in the structure and nothing downstream depends on its absence. Suggested location: a new subsection
+at the head of §9 Limitations (or a short §8.3), with a visible comment:
+
+```
+<!-- RESERVED FOR M. SCHUCKERS — estimand / non-causal framing.
+  Intended content (per Brian's Main Comment 1):
+   - Precise statement of the estimand we DO target (selection-reweighted, population-marginal
+     success probability over kickable situations) vs. what we do NOT (a counterfactual).
+   - What a fully causal treatment would require: defined counterfactual, positivity/overlap,
+     conditional ignorability of the attempt decision, SUTVA — and which we can/cannot defend.
+   - Benefits/drawbacks of selection-reweighting vs. a causal approach.
+-->
+```
+
+**Do not draft the estimand language ourselves** — it is explicitly assigned to the co-author.
 
 ### 1.4 Expand the propensity-model logic and explain leverage as a WP proxy
 - **Where:** §3.2 (the `leverage_z` bullet) — promote to its own short paragraph; reference from §3.1.
@@ -211,7 +238,7 @@ These five are **not** executed in this pass by author instruction.
 
 | # | Reviewer comment | Action | Tag |
 |---|---|---|---|
-| Main-1 | Causal vs. casual; what full causal needs | §1.3 non-causal reframe | `[PAPER]` |
+| Main-1 | Causal vs. casual; what full causal needs | §1.3a scrub overclaims; §1.3b placeholder — **estimand text by co-author** | `[PAPER]` |
 | Main-2 | Move raw-data exploration earlier | Deferred narrative re-org (banner) | `[DEFER]` |
 | Main-3 | Propensity should account for season / era | §2.3 season trend + era-stratified report | `[CODE]` |
 | Main-4a | M3 motivation | §1.2 motivation text | `[PAPER]` |
@@ -232,7 +259,12 @@ These five are **not** executed in this pass by author instruction.
 
 ## 4. Suggested execution order (dependencies)
 
-1. **Paper-only prose** (§1.1–§1.7) — independent of any run; do first.
+0. **Local setup** — work from the existing local clone that already contains the git-ignored `data/`
+   and `reports/` artifacts (`git fetch origin <branch> && git checkout <branch>`; ignored files are
+   untouched by branch switches). Only if starting from a fresh clone: re-run `01_data_prep.ipynb`,
+   which re-pulls play-by-play via `nflfastR::load_pbp()` and rebuilds `data/pbp_raw.rds` — slow but
+   fully reproducible.
+1. **Paper-only prose** (§1.1–§1.7, incl. §1.3a scrub + §1.3b placeholder) — no run needed; do first.
 2. **Data check** — confirm/produce `humidity_z` in `01_data_prep.ipynb`.
 3. **Propensity** — season trend in `02_propensity.ipynb`; re-run → new weights.
 4. **Models** — humidity + splined weather in `form_m1`; M2-pop both variants; M3 with/without PAT
