@@ -55,19 +55,10 @@ for (tag in c("Pre-2020", "Post-2020")) {
   chk(paste(tag, "M2 LL"),    v[4], ev(era, "M2 (IPW-corrected)", "logloss"))
 }
 
-cat("\n--- tbl-m2pop-variants ---\n")
-bb <- read_csv("reports/xfg_success/m2pop_variant_by_distance_oos.csv", show_col_types = FALSE) %>%
-  select(variant, dist_band, bias, brier) %>%
-  pivot_wider(names_from = variant, values_from = c(bias, brier))
-for (i in seq_along(bands)) {
-  l <- grep(bands[i], qmd, value = TRUE, fixed = TRUE)[2]   # 2nd occurrence = m2pop table
-  v <- as.numeric(str_extract_all(l, "[+-]?[0-9]+\\.[0-9]+")[[1]])
-  r <- bb[bb$dist_band == keys[i], ]
-  chk(paste(keys[i], "A bias"),  v[1], r$bias_A_refit)
-  chk(paste(keys[i], "B bias"),  v[2], r$bias_B_kicker_zeroed)
-  chk(paste(keys[i], "A Brier"), v[3], r$brier_A_refit)
-  chk(paste(keys[i], "B Brier"), v[4], r$brier_B_kicker_zeroed)
-}
+# The M2-pop A/B variant table (former Section 5.5) was cut from the manuscript as
+# non-central; only the adopted zeroed-kicker construction is stated, in Section 4.1.
+# m2pop_variant_by_distance_oos.csv is still produced by notebook 04, so this block can
+# be restored verbatim if the comparison is ever put back into the paper.
 
 cat("\n--- tbl-propensity-auc ---\n")
 pm <- read_csv("reports/attempt_pi/attempt_pi_metrics_by_season.csv", show_col_types = FALSE)
