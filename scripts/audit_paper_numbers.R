@@ -17,8 +17,8 @@ gv <- function(m, s, c) mt[[c]][mt$model == m & mt$split == s]
 cat("--- tbl-model-metrics ---\n")
 rows <- list(c("M0 (distance only)", "M0 (distance only)"),
              c("M1 (full GLMM)",     "M1 (full GLMM)"),
-             c("M2 (IPW)",           "M2 (IPW-corrected)"),
-             c("M3 (augmented)",     "M3 (augmented)"))
+             c("M2 (augmented)",     "M2 (augmented)"),
+             c("M3 (IPW)",           "M3 (IPW-corrected)"))
 for (r in rows) {
   l <- grep(paste0("| ", r[1], " |"), qmd, value = TRUE, fixed = TRUE)[1]
   v <- nums(l)
@@ -50,14 +50,14 @@ for (tag in c("Pre-2020", "Post-2020")) {
   l <- grep(paste0("| ", tag, " ("), qmd, value = TRUE, fixed = TRUE)[1]
   v <- nums(l, "0\\.[0-9]{4}")
   chk(paste(tag, "M1 Brier"), v[1], ev(era, "M1 (full GLMM)", "brier"))
-  chk(paste(tag, "M2 Brier"), v[2], ev(era, "M2 (IPW-corrected)", "brier"))
+  chk(paste(tag, "M3 Brier"), v[2], ev(era, "M3 (IPW-corrected)", "brier"))
   chk(paste(tag, "M1 LL"),    v[3], ev(era, "M1 (full GLMM)", "logloss"))
-  chk(paste(tag, "M2 LL"),    v[4], ev(era, "M2 (IPW-corrected)", "logloss"))
+  chk(paste(tag, "M3 LL"),    v[4], ev(era, "M3 (IPW-corrected)", "logloss"))
 }
 
-# The M2-pop A/B variant table (former Section 5.5) was cut from the manuscript as
+# The M3-pop A/B variant table (former Section 5.5) was cut from the manuscript as
 # non-central; only the adopted zeroed-kicker construction is stated, in Section 4.1.
-# m2pop_variant_by_distance_oos.csv is still produced by notebook 04, so this block can
+# m3pop_variant_by_distance_oos.csv is still produced by notebook 04, so this block can
 # be restored verbatim if the comparison is ever put back into the paper.
 
 cat("\n--- tbl-propensity-auc ---\n")
@@ -69,16 +69,16 @@ for (s in pm$season) {
   chk(paste("prop", s, "Brier"), v[2], pm$brier[pm$season == s], 5e-4)
 }
 
-cat("\n--- tbl-m3-grid ---\n")
-g <- read_csv("reports/xfg_success/m3_weight_grid.csv", show_col_types = FALSE)
+cat("\n--- tbl-m2-grid ---\n")
+g <- read_csv("reports/xfg_success/m2_weight_grid.csv", show_col_types = FALSE)
 for (w in g$pat_weight) {
   l <- grep(paste0("| ", formatC(w, format = "f", digits = 2), " | 0."), qmd, value = TRUE, fixed = TRUE)[1]
   v <- nums(l, "0\\.[0-9]{3,4}")
   r <- g[g$pat_weight == w, ]
-  chk(paste("m3grid", w, "Brier"), v[1], r$brier_is_fg)
-  chk(paste("m3grid", w, "LL"),    v[2], r$logloss_is_fg)
-  chk(paste("m3grid", w, "AUC"),   v[3], r$auc_is_fg, 5e-4)
-  chk(paste("m3grid", w, "Calib"), v[4], r$calib_err_is_fg)
+  chk(paste("m2grid", w, "Brier"), v[1], r$brier_is_fg)
+  chk(paste("m2grid", w, "LL"),    v[2], r$logloss_is_fg)
+  chk(paste("m2grid", w, "AUC"),   v[3], r$auc_is_fg, 5e-4)
+  chk(paste("m2grid", w, "Calib"), v[4], r$calib_err_is_fg)
 }
 
 cat(sprintf("\n============ %d checks passed, %d MISMATCHED ============\n", ok, bad))
