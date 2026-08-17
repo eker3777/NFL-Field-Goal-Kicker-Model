@@ -17,11 +17,15 @@
 # to. Breakouts: overall / made / missed / late-and-close, the last being where
 # the rules actually bind.
 #
+# SOURCE. Scored directly off 01_data_prep.ipynb's own leverage-scoring output
+# (data/fg_attempts.csv), which applies the already-fitted wp_heads_rulepack.rds
+# to every attempt via predict() -- not a frozen validation split from the
+# (deleted) fitting notebook. This covers the full 2015-2025 paper window.
+#
 # SCOPE, stated rather than glossed:
-#   (1) wp_post is another model's output, not a realized game result, so this
-#       measures agreement with nflfastR's WP model, not truth.
-#   (2) The leverage file covers 2015-2024; the paper's window is 2015-2025.
-#   Both caveats are repeated in the manuscript.
+#   wp_post is another model's output, not a realized game result, so this
+#   measures agreement with nflfastR's WP model, not truth. That caveat is
+#   repeated in the manuscript.
 #
 # Continuous target on [0,1]: RMSE / MAE / R^2 / mean bias. No AUC or log-loss.
 #
@@ -33,7 +37,7 @@ suppressPackageStartupMessages({
   library(dplyr); library(readr); library(tidyr)
 })
 
-IN_PATH  <- 'data/leverage/fg_valid_with_leverage_rules_2015_2024.csv'
+IN_PATH  <- 'data/fg_attempts.csv'
 OUT_DIR  <- 'reports/attempt_pi'
 N_BINS   <- 10L
 
@@ -41,13 +45,14 @@ stopifnot(file.exists(IN_PATH))
 if (!dir.exists(OUT_DIR)) dir.create(OUT_DIR, recursive = TRUE)
 
 lev <- readr::read_csv(IN_PATH, show_col_types = FALSE) %>%
-  filter(is_pat == 0L)
+  filter(is_pat == 0L, season >= 2015, season <= 2025)
 
 n_raw <- nrow(lev)
 
 lev <- lev %>%
   mutate(
-    made = fg_result == 'make',
+    wp_post = wp + wpa,
+    made = kick_result == 'made',
     # Head matching the realized outcome, before and after the endgame rules
     wp_hat_pre  = if_else(made, wp_make_hat,       wp_miss_hat),
     wp_hat_post = if_else(made, wp_make_hat_rules, wp_miss_hat_rules),

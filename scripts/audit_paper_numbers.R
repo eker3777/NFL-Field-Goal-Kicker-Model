@@ -123,23 +123,15 @@ chk("split perm p",       v[3], sp$perm_p,       5e-3)
 
 cat("\n--- leverage validation (Section 3.2) ---\n")
 lv <- read_csv("reports/attempt_pi/leverage_validation.csv", show_col_types = FALSE)
-lc <- read_csv("reports/attempt_pi/leverage_validation_calibration.csv", show_col_types = FALSE)
 lg <- function(s, st, c) lv[[c]][lv$subset == s & lv$stage == st]
-# Both leverage sentences sit in one Markdown paragraph, i.e. one line, so all ten
-# numbers come off a single grep in document order.
-l <- grep("Across 10,486 scored attempts", qmd, value = TRUE, fixed = TRUE)[1]
+l <- grep("scored attempts", qmd, value = TRUE, fixed = TRUE)[1]
 v <- nums(l)
-chk("lev RMSE overall",  v[1], lg("overall", "post-rules", "rmse"), 5e-4)
-chk("lev MAE overall",   v[2], lg("overall", "post-rules", "mae"),  5e-4)
-chk("lev R2 overall",    v[3], lg("overall", "post-rules", "r2"),   5e-4)
-chk("lev max calib gap", v[4], max(abs(lc$gap)), 5e-4)
+chk("lev RMSE overall", v[1], lg("overall", "post-rules", "rmse"), 5e-4)
+chk("lev MAE overall",  v[2], lg("overall", "post-rules", "mae"),  5e-4)
+chk("lev R2 overall",   v[3], lg("overall", "post-rules", "r2"),   5e-4)
 rr <- function(s) 100 * (lg(s, "post-rules", "rmse") - lg(s, "pre-rules", "rmse")) / lg(s, "pre-rules", "rmse")
+chk("lev rmse pct late",    -v[4], rr("late & close"), 5e-2)
 chk("lev rmse pct overall", -v[5], rr("overall"),      5e-2)
-chk("lev rmse pct made",    -v[6], rr("made"),         5e-2)
-chk("lev rmse pct missed",  -v[7], rr("missed"),       5e-2)
-chk("lev rmse pct late",    -v[8], rr("late & close"), 5e-2)
-chk("lev late rmse pre",  v[9],  lg("late & close", "pre-rules",  "rmse"), 5e-4)
-chk("lev late rmse post", v[10], lg("late & close", "post-rules", "rmse"), 5e-4)
 
 cat("\n--- M3-pop variant sentence (Section 6) ---\n")
 mv <- read_csv("reports/xfg_success/m3pop_variant_by_distance_oos.csv", show_col_types = FALSE)
