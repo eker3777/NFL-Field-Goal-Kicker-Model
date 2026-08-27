@@ -1,0 +1,253 @@
+/*-- scss:defaults --*/
+
+// Conference deck styling. Deliberately restrained: the figures carry the
+// talk, so the chrome stays out of the way. Palette is pulled from the
+// Okabe-Ito set the figures use, so slide accents and plot colours agree.
+
+$body-bg:            #ffffff;
+$body-color:         #1a1a1a;
+$link-color:         #0072B2;
+$presentation-heading-color: #14304a;
+$presentation-heading-font-weight: 700;
+
+// Lifted from 30px. Measured fill on the text slides ran 32-69% of the canvas
+// before this pass; the bump plus the vertical centring below closes most of
+// that gap without pushing the two dense slides (9 and 17) over.
+$presentation-font-size-root: 32px;
+$presentation-h1-font-size:   1.85em;
+$presentation-h2-font-size:   1.30em;
+$presentation-h3-font-size:   1.05em;
+
+/*-- scss:rules --*/
+
+// ===========================================================================
+// Slide geometry
+// ===========================================================================
+// Everything here sizes against the 1600x900 slide canvas, never against the
+// browser window.
+//
+// This replaces a `max-height: 74vh / 82vh` pair that measured against the
+// VIEWPORT. Because reveal scales the whole .slides container, `vh` inside it
+// resolves to a fraction of the browser window and then gets scaled again, so
+// the same deck laid out differently on every machine: measured at a 720px
+// window a full-slide figure rendered 590px tall and floated with a gap
+// beneath it, at 900px it rendered 738px, and at 1300px it wanted 1066px and
+// clipped off the bottom of a 900px slide. It also made PDF export depend on
+// the window size at the moment of export.
+//
+// `auto-stretch: false` is set in the YAML so Quarto's stretch JS is out of the
+// picture entirely. It only ever applied to lone top-level images, never to
+// images inside .columns, which is why full-slide figures and column figures
+// were sized by two different mechanisms.
+
+.reveal .slides > section {
+  height: 900px;
+  box-sizing: border-box;
+}
+
+// Scoped to .present on purpose. Reveal hides inactive slides with
+// `display: none`; an unscoped `display: flex` here overrides that and renders
+// every slide stacked on top of the others.
+//
+// `!important` is required, not defensive: reveal.js writes `display: block`
+// as an INLINE style on the current section from JS, and an inline style beats
+// any stylesheet selector regardless of specificity. Without it this rule is
+// silently inert and the whole flex frame below does nothing.
+.reveal .slides > section.present {
+  display: flex !important;
+  flex-direction: column;
+}
+
+// The print path (?print-pdf) paginates every section, so each one is its own
+// page and can take the flex frame unconditionally.
+@media print {
+  .reveal .slides > section {
+    display: flex !important;
+    flex-direction: column;
+  }
+}
+
+// The heading is pinned to the top of every slide so headings align across the
+// deck; everything below it shares the remaining space.
+.reveal .slides > section.present > h2 { flex: 0 0 auto; }
+
+// A figure, or a row of columns, takes all the height left over.
+// `min-height: 0` is load-bearing: flex items default to `min-height: auto`
+// and refuse to shrink below their intrinsic size, which is exactly how
+// content ends up hanging off the bottom of a slide.
+//
+// Note the `p`: pandoc wraps a standalone image in a paragraph, so the flex
+// child of the slide is the <p> and never the <img>. Targeting the image
+// directly matches nothing, and every figure then keeps its intrinsic height.
+.reveal .slides > section.present > p:has(> img),
+.reveal .columns > .column > p:has(> img) {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  margin: 0;
+}
+
+.reveal .slides > section.present > .columns {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+// Quarto lays reveal columns out as inline-block rather than as flexbox, so a
+// .column cannot be asked to match its neighbour's height or to centre its
+// text against the figure beside it. Making the row a real flex row gives us
+// both. It is also required for columns nested in the .vcenter wrapper: Quarto
+// ships `div.columns { display: initial }`, which leaves a wrapped columns row
+// inline and stacks the two columns on top of each other.
+.reveal .columns {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+}
+
+// flex-start, not center: column text tops align with each other and with the
+// heading rule, matching .slidebody above. Figure columns are unaffected --
+// the `p:has(> img)` rule below gives the figure `flex: 1 1 auto`, so it still
+// expands to fill whatever height its column has.
+.reveal .columns > .column {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+}
+
+// `object-fit: contain` means a figure whose aspect ratio does not match its
+// slot letterboxes rather than distorting or overflowing. The figures are also
+// built to fit their slots (see make_slide_figures.R), so in practice there is
+// little left to letterbox -- but this guarantees the deck cannot break on a
+// screen it has not been opened on.
+.reveal section img {
+  border: none;
+  box-shadow: none;
+  margin: 0 auto;
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.reveal p:has(> img) > img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+// Two body wrappers, and the difference is deliberate.
+//
+// .slidebody is the default. The block starts immediately under the heading
+// rule and grows downward, so a short slide and a dense slide open the same
+// way and the eye lands in the same place on every slide in the deck.
+.reveal .slides > section.present > .slidebody {
+  margin-top: 0;
+  margin-bottom: auto;
+  width: 100%;
+}
+
+// .vcenter is kept for the slides that are essentially one table. A table has
+// its own internal structure and no ragged bottom edge, so centring it in the
+// space below the heading reads better than pinning it to the top and leaving
+// a band of white beneath.
+.reveal .slides > section.present > .vcenter {
+  margin-top: auto;
+  margin-bottom: auto;
+  width: 100%;
+}
+
+// Quarto marks the title slide (and any slide given .center) for vertical
+// centring, but its usual mechanism is bypassed once the section is a flex
+// column, so restate it in flex terms.
+.reveal .slides > section.present.center { justify-content: center; }
+
+// For the few slides that are still sparse after the root bump and the table
+// bump. Applied to the wrapper rather than the section so the heading keeps
+// the same size as every other heading in the deck.
+.reveal section.airy > .vcenter,
+.reveal section.airy > .slidebody { font-size: 1.12em; }
+
+// ===========================================================================
+// Typography and components
+// ===========================================================================
+
+.reveal .slide-number {
+  background-color: transparent;
+  color: #9aa5ad;
+  font-size: 0.55em;
+}
+
+.reveal h2 {
+  border-bottom: 3px solid #0072B2;
+  padding-bottom: 0.18em;
+  margin-bottom: 0.45em;
+}
+
+// Lifted from 0.72em. The table slides were the emptiest in the deck
+// (A2 at 38% fill, A3 at 40%) and the table type was the reason.
+.reveal table {
+  font-size: 0.92em;
+  margin: 0.4em auto;
+}
+.reveal table th {
+  border-bottom: 2px solid #14304a;
+  color: #14304a;
+}
+.reveal table td, .reveal table th { padding: 0.22em 0.55em; }
+
+// Result tables read better when the winning cell is obvious.
+.reveal table strong { color: #0072B2; }
+
+.reveal .small     { font-size: 0.78em; }
+.reveal .smaller   { font-size: 0.66em; }
+.reveal .caption   { font-size: 0.60em; color: #6b757d; }
+
+// Pull-quote used for the one-line "so what" on result slides.
+.reveal .takeaway {
+  border-left: 5px solid #0072B2;
+  background: #f2f7fb;
+  padding: 0.45em 0.9em;
+  margin-top: 0.5em;
+  font-size: 0.86em;
+}
+
+.reveal .model-m1 { color: #0072B2; font-weight: 700; }
+.reveal .model-m2 { color: #D55E00; font-weight: 700; }
+.reveal .model-m3 { color: #CC79A7; font-weight: 700; }
+.reveal .model-m0 { color: #525252; font-weight: 700; }
+
+// Slide 5 states the era improvement as a count of kicks rather than as a
+// curve separation, because a smooth is hard to size from the back of a room.
+// The number is the slide, so it gets to be the largest thing on it.
+.reveal .headline {
+  font-size: 1.35em;
+  font-weight: 700;
+  color: #0072B2;
+  line-height: 1.25;
+  margin: 0.35em 0 0.15em 0;
+}
+.reveal .headline-sub {
+  font-size: 0.80em;
+  color: #4a5560;
+  margin-top: 0;
+}
+
+// Four-column model comparison. The default column gap is tuned for two or
+// three; at four the text blocks run together without a little extra air.
+.reveal .columns > .column { padding-right: 0.55em; }
+
+// Appendix slides are ordinary slides carrying visibility="uncounted", so they
+// are reachable by clicking forward but sit outside the visible slide count.
+// The tag is what tells the presenter they have left the main deck.
+.reveal .appendix-tag {
+  display: inline-block;
+  font-size: 0.55em;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #6b757d;
+  border: 1px solid #c8d0d6;
+  border-radius: 3px;
+  padding: 0.08em 0.5em;
+  margin-bottom: 0.3em;
+}

@@ -10,3 +10,16 @@ reports/*
 .ipynb_checkpoints/
 Review of Heres the Kicker.qmd
 Review_Response_Plan.md
+
+# Manuscript v2 is in progress and waiting on co-author review; kept local until
+# the review notes and the conference feedback land.
+Paper/
+
+# Planning briefs, deck plans and review notes are working material for the deck,
+# not part of the deliverable.
+Presentation/*.md
+Presentation/*.docx
+*Review Notes*.docx
+
+# Local agent config
+.claude/
