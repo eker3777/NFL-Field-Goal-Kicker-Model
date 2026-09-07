@@ -480,7 +480,6 @@ evol_panel <- function(regime, title, show_legend, ylab) {
 p_evol <- evol_panel('Long yards-to-go', 'Long yards-to-go (5 or more)', FALSE, 'Decision share') +
   evol_panel('Short yards-to-go', 'Short yards-to-go (4 or fewer)', TRUE, NULL) +
   plot_annotation(
-    title = 'Historical shifts in fourth-down decisions',
     subtitle = 'On short yards-to-go coaches increasingly go for it, declining punts and kicks.',
     theme = slide_annotation())
 
@@ -553,8 +552,7 @@ p_shortera <- ggplot(short_ytg_era,
                                    'Post-2020 (2020-2025)' = 'solid')) +
   scale_y_continuous(labels = scales::percent) +
   scale_x_continuous(breaks = seq(0, 60, 10)) +
-  labs(title = 'Fourth and short: the levels moved, the shapes did not',
-       subtitle = 'Fourth down with 4 or fewer to go. Dashed = pre-2020, solid = post-2020.',
+  labs(subtitle = 'Fourth down with 4 or fewer to go. Dashed = pre-2020, solid = post-2020.',
        x = 'Yards from end zone', y = 'Decision rate',
        colour = NULL, linetype = NULL) +
   guides(linetype = guide_legend(override.aes = list(colour = 'grey30'))) +
@@ -745,8 +743,7 @@ p_wpa_ytg <- ggplot(wpa_ytg, aes(yardline_100, wpa, colour = Decision, fill = De
   scale_colour_manual(values = decision_cols) +
   scale_fill_manual(values = decision_cols) +
   scale_x_continuous(breaks = seq(0, 55, 10)) +
-  labs(title = 'The value was in the alternative',
-       subtitle = 'WPA by decision and field position, 2015-2025. Descriptive, not causal.',
+  labs(subtitle = 'WPA by decision and field position, 2015-2025. Descriptive, not causal.',
        x = 'Yards from end zone', y = 'WPA', colour = NULL, fill = NULL) +
   theme_slide() + theme(legend.position = 'top')
 

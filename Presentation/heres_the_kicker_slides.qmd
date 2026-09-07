@@ -20,6 +20,8 @@ format:
     incremental: false
     transition: none
     history: false
+    menu:
+      numbers: true
     # Quarto's stretch JS only ever reached lone top-level images, never images
     # inside .columns, so figures were sized by two different mechanisms
     # depending on the slide. custom.scss now sizes every figure the same way,
@@ -40,17 +42,18 @@ venue, game state.
 
 All of them are fit on kicks a coach agreed to take.
 
-Coaches decline potential kicking opportunities in favour of punting or going
+Coaches decline potential kicking opportunities in favor of punting or going
 for it on fourth down.
 
 These decisions are not random. Actual attempts represent a selected group,
-overrepresenting favourable kicking scenarios.
+overrepresenting favorable kicking scenarios.
 :::
 
 ::: {.column width="42%"}
 ::: {.takeaway}
-If a coach declines because they doubt their kicker, that judgment is
-information no outcome model observes.
+If a coach believes they have information about their kicker's ability, that
+belief can shape which kicks get attempted, information no outcome model
+observes directly.
 :::
 :::
 :::
@@ -64,13 +67,13 @@ agreed to take. We wanted to know what the declined ones would have told us.
   Osborne, the distance-adjusted baselines. The gap is not the functional form.
 - The gap is the sample. A fourth down produces a kick only when the coach
   chooses kick over punt and over going for it.
-- State the assumed mechanism plainly, so it can be tested. Coaches who trust
-  their kicker hand them harder kicks. Under that assumption the observed
-  attempt set is an easier subset of the kickable universe, and the decline
-  itself carries information about kicker ability.
-- This is an assumption about how coaches behave, not something measured yet.
-  That matters, because by the end of the talk the data will point somewhere
-  else.
+- Frame the problem as what the model sees, not why coaches decide. If coaches
+  act on a private read of their kicker, that read can shape which kicks are
+  attempted and it never enters an outcome model as a variable, so the observed
+  attempt set may be a non-representative slice of the kickable universe.
+- This is a statement about what the data can and cannot show, not a measured
+  claim about coach behavior. That matters, because by the end of the talk the
+  data will point somewhere else.
 
 Roughly 55 seconds.
 :::
@@ -114,7 +117,8 @@ decisions · 9,297 train / 2,251 held-out.
   segment is the second bar.
 - Make rate by band is worth a beat. Beyond 60 yards there are 96 kicks. That
   constraint returns at the end of the talk.
-- Held-out split is at the game level, 593 disjoint games.
+- Held-out split is drawn at the game level, stratified by season: roughly 20%
+  of each season's field-goal games, 593 disjoint games.
 
 40 seconds.
 :::
@@ -139,14 +143,6 @@ in 2020 to 2025, against the pre-2020 success curve
 :::
 ::: {.headline-sub}
 and \~148 of the \~202 come from beyond 45 yards
-:::
-
-::: {.smaller}
-A LOESS smooth of make rate on distance, span 0.4, is fit to the 2015 to 2019
-attempts, then evaluated at the distance of each of the 6,609 attempts from 2020
-to 2025. Expected makes are the sum of those fitted probabilities; the excess is
-actual minus expected. Descriptive: attempt composition is also moving across
-the era boundary.
 :::
 
 ::: {.takeaway}
@@ -184,108 +180,12 @@ concentrated in the long tail.
   from 2020, and accuracy on those same kicks keeps climbing.
 - That 2020 break is why several later figures split pre- and post-2020. The
   split is chosen off the kicking data, not off the decision data.
-- Shaded band is the modelling window.
+- Shaded band is the modeling window.
 
 Takeaway: attempts got longer and accuracy held. Coaches appear to have
 responded to the improvement on the previous slide.
 
 50 seconds.
-:::
-
-## Modelling the attempt decision
-
-:::: {.slidebody}
-::: {.columns}
-::: {.column width="56%"}
-**Multinomial logit** over kick, punt, go. Reference category is go for it.
-
-- Natural spline on **field position**, full field 1 to 100
-- **Log game seconds remaining**, quarter-time interactions
-- Yards to go, score state, venue, wind, temperature
-- **Leverage**, the win probability after a make minus the win probability
-  after a miss, estimated before the outcome is known
-:::
-
-::: {.column width="44%"}
-**Rolling origin.** Train on seasons $s{-}3, s{-}2, s{-}1$, predict season $s$.
-
-::: {.takeaway}
-**AUC 0.933 to 0.959** in plausible kicking range, every season
-
-**RMSE 0.045** against realised win probability, after endgame overrides
-:::
-:::
-:::
-
-$$
-\log\frac{P(D_i = d)}{P(D_i = \text{Go})} = \alpha_d + \sum_{k=1}^{6} \beta_{d,k}\, n^{\text{fp}}_k(\text{yl}_i) + \gamma_{d} \log(1 + t_i) + \delta_d\, \text{ytg}_i + \boldsymbol{\theta}_d^\top \mathbf{S}_i + \psi_d L_i
-$$
-
-::::
-
-::: {.notes}
-Research question one is answered on this slide. The decision is highly
-structured, so the correction is well founded.
-
-- Leverage is the piece worth defending. nflfastR gives a kick's
-  win-probability impact, but that depends on whether it went in. The coach
-  decides before knowing. So we estimate the win probability the kicking team
-  would hold after a make and after a miss, and take the difference.
-  Fractional-logit heads with rule-based overrides at the endgame tails.
-- Against 11,615 scored attempts the matching head agrees closely with realised
-  post-play win probability. The overrides cut RMSE 21.2% in late-and-close
-  situations against 2.5% overall, which is exactly where they are meant to act.
-- Quote the in-range AUC, not the full-field figure. Across the whole field it
-  is near 0.98, but that mostly reflects knowing that a punt from your own 12 is
-  a punt. The honest question is whether kicks and declines separate where both
-  were genuinely available.
-- If asked why field position rather than kick distance: a fourth down that is
-  not kicked has no kick distance, you have to invent one, and the invented
-  number only means anything where a kick is possible. Building on it would
-  have thrown away most punts from a model of when teams punt.
-- Rolling origin prevents propensity leakage into the outcome models. Every
-  covariate transform is fixed rather than estimated, so no part of the design
-  matrix sees pooled data before the folds are drawn.
-
-70 seconds. The longest slide in the deck.
-:::
-
-## From propensities to weights
-
-::: {.columns}
-::: {.column width="45%"}
-$$w_i = \frac{\bar{\pi}}{\hat{\pi}(X_i)}$$
-
-- Propensities clipped to 0.02 and 0.98 before inversion
-- Hajek-normalised to mean 1, capped at three seasonal standard deviations,
-  renormalised
-- Normalised over **kickable** situations only
-
-::: {.takeaway}
-Rare, hard attempts are upweighted so the observed sample better represents
-the full kickable population. Final weights span 0.63 to 8.49.
-:::
-:::
-
-::: {.column width="55%"}
-![](figures/weights_vs_distance.png)
-:::
-:::
-
-::: {.notes}
-- Distance is overwhelmingly the driver of weight magnitude, which is what you
-  want. Long kicks are the ones coaches decline, so they are the ones the
-  observed sample under-represents. Weather and game state add scatter.
-- Normalising over the in-range subset rather than the full field matters for
-  what M3 estimates. Normalising over the full field would make M3 target a
-  population made mostly of 80 and 90 yard field goals.
-- Flag the cost now, because it becomes the explanation later. A handful of
-  long, low-propensity kicks carry weights several times a routine kick. That
-  is variance, and the cap constrains it but does not remove it. Effective
-  sample size falls from 11,764 to about 6,300.
-- Full construction detail is in the appendix if anyone wants it.
-
-45 seconds.
 :::
 
 ## Four outcome models
@@ -313,16 +213,11 @@ M1 fitted on an augmented set. PATs with real outcomes, declined fourth downs
 as pseudo-misses, both at reduced weight.
 
 *Impute the unobserved attempts.*
-
-::: {.smaller}
-Screens. Propensity at least 0.25. Distance beyond 33 yards. 1,923 of 11,142
-candidates admitted. Labels biased in a known direction.
-:::
 :::
 
 ::: {.column width="25%"}
 ### [M3]{.model-m3} IPW
-M1 fitted with stabilised IPW case weights.
+M1 fitted with stabilized IPW case weights.
 
 *Reweight instead of impute.*
 
@@ -343,7 +238,7 @@ M2 versus M3 is the intellectual arc. Spend the time here.
   pessimistic in exactly the distance range it is meant to learn about.
 - The screens are substantive, not cosmetic. Propensity at least 0.25 keeps out
   situations no coach would have kicked from. The 33-yard floor sits just past
-  PAT range, so near-certain kicks are not labelled misses. We tested removing
+  PAT range, so near-certain kicks are not labeled misses. We tested removing
   it: it is the single most damaging change we made.
 - M3 reaches the same target without inventing an outcome. That is the whole
   argument for preferring it.
@@ -351,18 +246,115 @@ M2 versus M3 is the intellectual arc. Spend the time here.
 70 seconds.
 :::
 
+## Modeling the attempt decision
+
+:::: {.slidebody}
+::: {.columns}
+::: {.column width="56%"}
+**Multinomial logit** over kick, punt, go. Reference category is go for it.
+
+- Natural spline on **field position** $\text{yl}_i$, full field 1 to 100
+- **Log game seconds remaining** $\log(1 + t_i)$, quarter-time interactions
+- Yards to go $\text{ytg}_i$; score state, venue, wind, temperature $\mathbf{S}_i$
+- **Leverage** $L_i$, the win probability after a make minus the win probability
+  after a miss, estimated before the outcome is known
+:::
+
+::: {.column width="44%"}
+**Rolling origin.** Train on seasons $s{-}3, s{-}2, s{-}1$, predict season $s$.
+
+::: {.takeaway}
+**AUC 0.933 to 0.959** in plausible kicking range, every season
+
+**RMSE 0.045** against realized win probability, after endgame overrides
+:::
+:::
+:::
+
+$$
+\log\frac{P(D_i = d)}{P(D_i = \text{Go})} = \alpha_d + \sum_{k=1}^{6} \beta_{d,k}\, n^{\text{fp}}_k(\text{yl}_i) + \gamma_{d} \log(1 + t_i) + \delta_d\, \text{ytg}_i + \boldsymbol{\theta}_d^\top \mathbf{S}_i + \psi_d L_i
+$$
+
+::::
+
+::: {.notes}
+Research question one is answered on this slide. The decision is highly
+structured, so the correction is well founded.
+
+- Leverage is the piece worth defending. nflfastR gives a kick's
+  win-probability impact, but that depends on whether it went in. The coach
+  decides before knowing. So we estimate the win probability the kicking team
+  would hold after a make and after a miss, and take the difference.
+  Fractional-logit heads with rule-based overrides at the endgame tails.
+- Against 11,615 scored attempts the matching head agrees closely with realized
+  post-play win probability. The overrides cut RMSE 21.2% in late-and-close
+  situations against 2.5% overall, which is exactly where they are meant to act.
+- Quote the in-range AUC, not the full-field figure. Across the whole field it
+  is near 0.98, but that mostly reflects knowing that a punt from your own 12 is
+  a punt. The honest question is whether kicks and declines separate where both
+  were genuinely available.
+- If asked why field position rather than kick distance: a fourth down that is
+  not kicked has no kick distance, you have to invent one, and the invented
+  number only means anything where a kick is possible. Building on it would
+  have thrown away most punts from a model of when teams punt.
+- Rolling origin prevents propensity leakage into the outcome models. Every
+  covariate transform is fixed rather than estimated, so no part of the design
+  matrix sees pooled data before the folds are drawn.
+
+70 seconds. The longest slide in the deck.
+:::
+
+## From propensities to weights
+
+::: {.columns}
+::: {.column width="45%"}
+$$w_i = \frac{\bar{\pi}}{\hat{\pi}(X_i)}$$
+
+- Propensities $\hat{\pi}(X_i)$ clipped to 0.02 and 0.98 before inversion
+- $w_i$ Hajek-normalized to mean 1, capped at three seasonal standard
+  deviations, renormalized
+- $w_i$ normalized over **kickable** situations only
+
+::: {.takeaway}
+Rare, hard attempts are upweighted so the observed sample better represents
+the full kickable population. Final weights span 0.63 to 8.49.
+:::
+:::
+
+::: {.column width="55%"}
+![](figures/weights_vs_distance.png)
+:::
+:::
+
+::: {.notes}
+- Distance is overwhelmingly the driver of weight magnitude, which is what you
+  want. Long kicks are the ones coaches decline, so they are the ones the
+  observed sample under-represents. Weather and game state add scatter.
+- Normalizing over the in-range subset rather than the full field matters for
+  what M3 estimates. Normalizing over the full field would make M3 target a
+  population made mostly of 80 and 90 yard field goals.
+- Flag the cost now, because it becomes the explanation later. A handful of
+  long, low-propensity kicks carry weights several times a routine kick. That
+  is variance, and the cap constrains it but does not remove it. Effective
+  sample size falls from 11,764 to about 6,300.
+- Full construction detail is in the appendix if anyone wants it.
+
+45 seconds.
+:::
+
 ## The outcome model
 
 :::: {.slidebody}
-- Seven-column B-spline in distance. Interior knots 28, 38, 48, 58. Boundaries
-  18 and 70.
-- Natural splines, 3 df each, in standardised wind, temperature, humidity.
-- Contextual indicators. Turf, precipitation, clock running, last two minutes,
-  iced, playoffs.
+- Seven-column B-spline in distance ($d_i$). Interior knots 28, 38, 48, 58.
+  Boundaries 18 and 70.
+- Natural splines, 3 df each, in standardized wind ($W_i$), temperature ($T_i$),
+  and humidity ($H_i$).
+- Contextual indicators ($\mathbf{C}_i$). Turf, precipitation, clock running,
+  last two minutes, iced, playoffs.
 - Kicker-season random intercept $u_{s(i)}$. Stadium random intercept $v_{g(i)}$.
 
 $$
-\text{logit}\, P(\text{make}_i) = \sum_{k=1}^{7} \beta_k b_k(d_i) + \sum_{j} \gamma_j n_j(w_i, T_i, H_i) + \boldsymbol{\delta}^\top \mathbf{C}_i + u_{s(i)} + v_{g(i)}
+\text{logit}\, P(\text{make}_i) = \sum_{k=1}^{7} \beta_k b_k(d_i) + \sum_{j} \gamma_j n_j(W_i, T_i, H_i) + \boldsymbol{\delta}^\top \mathbf{C}_i + u_{s(i)} + v_{g(i)}
 $$
 
 ::: {.takeaway}
@@ -412,7 +404,7 @@ beat.
 - Both scoring rules agree in both splits, so the reversal is not an artifact of
   the choice of proper scoring rule.
 - Era stability and train/test balance are both in the appendix if they come up.
-  Short version: M1 beats M3 in both halves of the window, and the realised
+  Short version: M1 beats M3 in both halves of the window, and the realized
   split is an unremarkable draw against 2,000 permutations.
 
 80 seconds.
@@ -445,6 +437,10 @@ beat.
 ::: {.columns}
 ::: {.column width="60%"}
 ![](figures/brier_comparison_is_oos.png)
+
+::: {.smaller}
+M1 Brier: IS 0.1004 / OOS 0.1004.  M3 Brier: IS 0.0982 / OOS 0.1030.
+:::
 :::
 
 ::: {.column width="40%"}
@@ -495,6 +491,12 @@ exactly there. Out of sample the curves cross.
 
 ![](figures/kicking_decision_evolution.png)
 
+::: {.takeaway}
+On long yards to go, field goals keep taking share from punts, in step with
+kicker improvement. On short yards to go, going for it surges after about 2018,
+a shift better kicking does not explain.
+:::
+
 ::: {.notes}
 Split by yards to go, because the trade-off is completely different.
 
@@ -515,6 +517,12 @@ Takeaway: the first follows from kicker improvement. The second does not.
 ## Fourth and short, by era
 
 ![](figures/short_yardage_decisions_era.png)
+
+::: {.takeaway}
+Post-2020, coaches go for it more at nearly every field position. If declines
+were about doubting the kicker, improving kickers should have moved these curves
+the other way.
+:::
 
 ::: {.notes}
 - Same short yards-to-go situations, both eras on shared axes. Dashed is
@@ -537,6 +545,12 @@ Takeaway: the first follows from kicker improvement. The second does not.
 
 ![](figures/wpa_by_ytg_regime.png)
 
+::: {.takeaway}
+On short yards to go, going for it carries positive win probability added almost
+everywhere, while a field goal does not. The decline looks less like doubt about
+the kicker and more like taking the higher-value option.
+:::
+
 ::: {.notes}
 - Back to the full 2015 to 2025 sample after the era split, so this is not a
   post-2020 artifact.
@@ -544,7 +558,7 @@ Takeaway: the first follows from kicker improvement. The second does not.
   and climbs as you move away from the end zone. Field goal WPA is negative
   essentially everywhere in that regime.
 - Long yards to go. Field goals hold the advantage until roughly 40 yards out.
-- Coaches appear to have internalised this and acted on it.
+- Coaches appear to have internalized this and acted on it.
 - Bring it back to the models. We assumed a conservative coaching ethic,
   declining out of doubt about the kicker. What the decision curves and the WPA
   curves show together is consistent with coaches moving toward the
@@ -568,7 +582,7 @@ Takeaway: the first follows from kicker improvement. The second does not.
    season.
 2. Pseudo-label augmentation fails, and fails worse the harder you lean on it.
 3. IPW corrects what it claims to in-sample at long distance and still does not
-   generalise. M1 is the better forecaster in both eras.
+   generalize. M1 is the better forecaster in both eras.
 
 **Recommendation**
 
@@ -604,7 +618,7 @@ For in-game make probability, use the unweighted GLMM.
    season.
 2. Pseudo-label augmentation fails, and fails worse the harder you lean on it.
 3. IPW corrects what it claims to in-sample at long distance and still does not
-   generalise. M1 is the better forecaster in both eras.
+   generalize. M1 is the better forecaster in both eras.
 
 **Recommendation**
 
@@ -618,15 +632,11 @@ We assumed coaches decline out of doubt about the kicker. The decision curves
 and the WPA landscape point elsewhere. If the decision carries little
 information about kicker ability, there is little for a correction to recover.
 
-**Scope**
-
-M1 and M3 target different estimands. This is a predictive comparison. Nothing
-here identifies the causal effect of the attempt decision.
-
 **Next**
 
-Kicker evaluation via FGOE. A causal treatment of the attempt decision. A
-win-probability-maximising decision model.
+Kicker evaluation via an over-expected model. Coaching analysis via a
+win-probability-maximizing decision model. A causal treatment of the attempt
+decision.
 :::
 :::
 ::::
@@ -647,7 +657,7 @@ re-read it.
 
 Closing line: we assumed coaches were protecting their kickers. What the data
 appears to show is coaches taking the better bet. Correcting for a decision that
-looks mostly like win maximisation does not tell you much more about whether a
+looks mostly like win maximization does not tell you much more about whether a
 kick goes in.
 
 30 seconds.
@@ -676,7 +686,7 @@ Osborne and Levine, on shrinkage estimation of field goal success.
 
 Horvitz and Thompson, on sampling without replacement from a finite universe.
 
-Hernan and Robins, *Causal Inference*, on stabilised weights.
+Hernan and Robins, *Causal Inference*, on stabilized weights.
 :::
 :::
 :::
@@ -684,6 +694,21 @@ Hernan and Robins, *Causal Inference*, on stabilised weights.
 
 ::: {.notes}
 10 seconds. The appendix continues from here if a question needs it.
+:::
+
+## New Diamond Open Access journal {.qr}
+
+::: {style="text-align: center"}
+**Journal of Statistics and Data Science in Sports**
+
+*https://journals.charlotte.edu/index.php/jsdss*
+:::
+
+![](figures/qr_code_jsdss.svg)
+
+::: {.notes}
+Quick plug for the journal. Diamond Open Access, no author or reader fees, edited
+by Michael Schuckers. The code goes to the journal's site. 10 to 15 seconds.
 :::
 
 ## Train and test balance {visibility="uncounted"}
@@ -703,7 +728,7 @@ Hernan and Robins, *Causal Inference*, on stabilised weights.
 ::: {.smaller}
 Season-stratified game-level permutation test on the band shares, 2,000 redraws.
 Observed total variation distance 0.0182, null median 0.0162, $p = 0.385$.
-The realised split is an unremarkable draw.
+The realized split is an unremarkable draw.
 :::
 ::::
 
@@ -806,11 +831,11 @@ kicks, while the top decile collects its 225 from a slice about a point wide.
 ::: {.column width="52%"}
 **Three stages, per season**
 
-1. Stabilise. $w_i = \bar{\pi} / \hat{\pi}(X_i)$, with $\hat{\pi}$ clipped to
+1. Stabilize. $w_i = \bar{\pi} / \hat{\pi}(X_i)$, with $\hat{\pi}$ clipped to
    $[0.02, 0.98]$ before inversion.
-2. Hajek-normalise to mean 1, then cap at
-   $\bar{w}_s + 3\sigma_{w,s}$, then renormalise.
-3. $\bar{\pi}$ and both normalisations are computed over the **in-range**
+2. Hajek-normalize to mean 1, then cap at
+   $\bar{w}_s + 3\sigma_{w,s}$, then renormalize.
+3. $\bar{\pi}$ and both normalizations are computed over the **in-range**
    subset, not the full propensity frame.
 :::
 
@@ -833,7 +858,7 @@ summary of the price: the weights are not extreme any more, but they still cost
 close to half the effective sample, and that is where M3's out-of-sample
 variance comes from.
 
-If asked why normalise in-range: normalising over the full field would make M3
+If asked why normalize in-range: normalizing over the full field would make M3
 target a population made mostly of 80 and 90 yard field goals.
 :::
 
@@ -844,6 +869,11 @@ target a population made mostly of 80 and 90 yard field goals.
 ::: {.columns}
 ::: {.column width="58%"}
 ![](figures/m2_eligibility.png)
+
+::: {.smaller}
+Primary screen: propensity at least 0.25 and distance beyond 33 yards. 1,923 of
+11,142 candidates admitted, with pseudo-miss labels biased in a known direction.
+:::
 :::
 
 ::: {.column width="42%"}
@@ -898,7 +928,7 @@ weight rises. Nothing in the grid beats M1 out of sample.
 
 ::: {.notes}
 Triggered by "how does weather enter?". Natural splines with 3 df each in
-standardised wind, temperature and humidity, entered additively.
+standardized wind, temperature and humidity, entered additively.
 
 This is the raw relationship, and it is confounded with distance, because
 coaches attempt shorter kicks in bad conditions. The next slide takes distance
@@ -946,8 +976,8 @@ goal is a 55-plus yard kick.
 
 ::: {.notes}
 Triggered by "how well does it discriminate?". In-sample predicted probability
-split by realised outcome. M3 pushes low-probability kicks leftward, which is
-the same tail behaviour the distance-band table shows, seen from a different
+split by realized outcome. M3 pushes low-probability kicks leftward, which is
+the same tail behavior the distance-band table shows, seen from a different
 angle.
 :::
 
@@ -973,7 +1003,7 @@ the window.
 ::: {.column width="50%"}
 **Speculation, not analysis**
 
-Why did fourth-down behaviour change so sharply around 2018 to 2020? Coaching
+Why did fourth-down behavior change so sharply around 2018 to 2020? Coaching
 trees, the spread of analytics staff, and public win-probability tools are all
 plausible and none of them are tested here.
 
@@ -997,7 +1027,7 @@ never taken.
 ::::
 
 ::: {.notes}
-Explicitly labelled as speculation. If someone pushes on the coaching-tree
+Explicitly labeled as speculation. If someone pushes on the coaching-tree
 story, agree that it is interesting and say plainly that we have not tested it.
 
 The right closing note on the causal question: this paper is a predictive

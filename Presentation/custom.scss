@@ -251,3 +251,11 @@ $presentation-h3-font-size:   1.05em;
   padding: 0.08em 0.5em;
   margin-bottom: 0.3em;
 }
+
+// The journal QR slide: centered text over the code. The image is a direct child
+// of the section, so it picks up the deck's figure flex sizing; the explicit
+// height cap keeps a square code from expanding to fill the slot and overrunning
+// the slide. Sized against the 900px canvas, per the note at the top of this file.
+.reveal section.qr > div[style*="text-align"] { margin-bottom: 0.6em; }
+.reveal section.qr > p:has(> img) { flex: 0 1 auto; min-height: 0; }
+.reveal section.qr > p:has(> img) > img { max-height: 430px; width: auto; }
