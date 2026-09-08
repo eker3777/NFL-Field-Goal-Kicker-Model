@@ -79,9 +79,23 @@ $presentation-h3-font-size:   1.05em;
 // section in a new `.pdf-page` div (`.slides > .pdf-page > section`) before
 // this CSS ever gets a chance to apply, so a direct-child combinator between
 // `.slides` and `section` never matches during export.
+//
+// `height: 900px` here is load-bearing, not restating the rule above. Quarto's
+// own theme ships `.reveal .slide:not(.center) { height: 100% }` (3 classes,
+// beats the top-level `.reveal .slides > section { height: 900px }` rule's 2
+// classes + 1 type on specificity alone) -- invisible live, where the
+// section's containing block is `.slides` (which reveal.js also sizes to
+// 900px, so 100% resolves to the same number either rule wins) but not in
+// print, where reveal-print's own CSS makes the section position:absolute
+// and its containing block becomes the 989px-tall .pdf-page. 100% of that is
+// 989px, 89px taller than intended, so every non-`.center` slide overflowed
+// its own page by the 45px top/bottom margin either side -- cutting off
+// whatever sat at the bottom (callouts, figures). This selector's 4 classes
+// beat `.slide:not(.center)`'s 3, so it wins here regardless.
 html.reveal-print.print-pdf .reveal .slides section {
   display: flex !important;
   flex-direction: column;
+  height: 900px;
 }
 html.reveal-print.print-pdf .reveal .slides section > h2 { flex: 0 0 auto; }
 html.reveal-print.print-pdf .reveal .slides section > p:has(> img) {

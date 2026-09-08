@@ -96,6 +96,13 @@ async function main() {
   const chromePath = findChrome();
   console.error("Using Chrome at:", chromePath);
 
+  // Math on the deck renders via MathJax loaded live from a CDN (Quarto's
+  // embed-resources does not bundle it -- it's injected by a script tag at
+  // runtime, so this is a real network fetch even in an otherwise
+  // self-contained HTML file). Route it through the same proxy this shell
+  // uses, if any, or the fetch silently fails and every equation is left as
+  // raw, untypeset LaTeX source in the export.
+  const proxy = process.env.HTTPS_PROXY || process.env.https_proxy;
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "kicker-slides-"));
   const chrome = spawn(chromePath, [
     "--headless=new",
@@ -104,6 +111,7 @@ async function main() {
     `--remote-debugging-port=${PORT}`,
     `--window-size=${SLIDE_WIDTH},${SLIDE_HEIGHT}`,
     "--hide-scrollbars",
+    ...(proxy ? [`--proxy-server=${proxy}`] : []),
   ], { stdio: "ignore" });
 
   try {
@@ -147,6 +155,32 @@ async function main() {
     await navPromise;
     await sleep(2000);
 
+    // Wait for MathJax to finish loading from its CDN (see the proxy note
+    // above) before touching any slide with math on it, up to a generous
+    // timeout in case the network is slow or genuinely unreachable.
+    const mathjaxReady = await send("Runtime.evaluate", {
+      expression: `
+        new Promise((resolve) => {
+          const deadline = Date.now() + 20000;
+          (function poll() {
+            if (typeof MathJax !== "undefined" && MathJax.Hub) { resolve(true); return; }
+            if (Date.now() > deadline) { resolve(false); return; }
+            setTimeout(poll, 200);
+          })();
+        })
+      `,
+      awaitPromise: true,
+      returnByValue: true,
+    });
+    if (mathjaxReady.result.result.value) {
+      console.error("MathJax loaded.");
+    } else {
+      console.error(
+        "WARNING: MathJax did not load within 20s (no network access to its CDN?). " +
+        "Equations will render as raw LaTeX source in the export."
+      );
+    }
+
     const totalRes = await send("Runtime.evaluate", {
       // getTotalSlides() excludes data-visibility="uncounted" appendix
       // slides; count real DOM sections instead so appendix slides are
@@ -157,13 +191,13 @@ async function main() {
     const total = totalRes.result.result.value;
     console.error("Slides to export:", total);
 
-    // margin:0 fills the full 1600x900 viewport 1:1 (reveal's default
-    // margin otherwise shrinks live content to make room for on-screen
-    // breathing room, which we don't want in a full-bleed export). Hide
-    // the on-screen controls/progress bar/menu button too.
+    // Hide the on-screen controls/progress bar/menu button, which have no
+    // place in a static export. Deliberately NOT touching reveal's margin
+    // config: the deck is designed to show with that breathing room, live
+    // or exported, so the capture should match it rather than go full-bleed.
     await send("Runtime.evaluate", {
       expression: `
-        Reveal.configure({ margin: 0, controls: false, progress: false, menu: { openButton: false } });
+        Reveal.configure({ controls: false, progress: false, menu: { openButton: false } });
         var css = document.createElement('style');
         css.textContent = '.slide-menu-button, .slide-menu-wrapper { display: none !important; }';
         document.head.appendChild(css);
@@ -173,7 +207,18 @@ async function main() {
 
     for (let i = 0; i < total; i++) {
       await send("Runtime.evaluate", { expression: `Reveal.slide(${i})` });
-      await sleep(400);
+      await sleep(300);
+      // reveal's MathJax plugin re-typesets the current slide on
+      // 'slidechanged', asynchronously via MathJax.Hub.Queue. Wait for that
+      // queue to drain before screenshotting so equations aren't caught
+      // mid-render (or as raw LaTeX source, pre-render).
+      if (mathjaxReady.result.result.value) {
+        await send("Runtime.evaluate", {
+          expression: `new Promise((resolve) => MathJax.Hub.Queue(resolve))`,
+          awaitPromise: true,
+        });
+      }
+      await sleep(150);
       const shot = await send("Page.captureScreenshot", {
         format: "png",
         clip: { x: 0, y: 0, width: SLIDE_WIDTH, height: SLIDE_HEIGHT, scale: 1 },
