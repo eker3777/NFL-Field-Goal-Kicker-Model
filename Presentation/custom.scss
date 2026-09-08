@@ -59,13 +59,52 @@ $presentation-h3-font-size:   1.05em;
 }
 
 // The print path (?print-pdf) paginates every section, so each one is its own
-// page and can take the flex frame unconditionally.
-@media print {
-  .reveal .slides > section {
-    display: flex !important;
-    flex-direction: column;
-  }
+// page and can take the flex frame unconditionally -- unlike live view, print
+// lays out every slide at once, not just the current one, so none of this can
+// be scoped to `.present` the way the live rules below are.
+//
+// reveal.js's own print stylesheet ships a rule for this exact selector --
+// `html.reveal-print .reveal .slides section` -- that forces
+// `display:block!important;position:absolute!important`. That selector carries
+// 3 classes + 2 type selectors; a bare `@media print { .reveal .slides >
+// section {...} }` (2 classes + 1 type) cannot outrank it regardless of
+// !important or source order, so it was silently losing and every slide fell
+// back to plain block flow for export -- fine for short slides, but slides
+// whose live-mode fit relies on the flex shrink below spilled past the page
+// and got split across two PDF pages. `html.reveal-print.print-pdf` (both
+// classes reveal.js adds to <html> during export) adds a 4th class, which
+// wins outright on specificity alone.
+//
+// `.slides section`, not `.slides > section`: reveal's print pass wraps each
+// section in a new `.pdf-page` div (`.slides > .pdf-page > section`) before
+// this CSS ever gets a chance to apply, so a direct-child combinator between
+// `.slides` and `section` never matches during export.
+html.reveal-print.print-pdf .reveal .slides section {
+  display: flex !important;
+  flex-direction: column;
 }
+html.reveal-print.print-pdf .reveal .slides section > h2 { flex: 0 0 auto; }
+html.reveal-print.print-pdf .reveal .slides section > p:has(> img) {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  margin: 0;
+}
+html.reveal-print.print-pdf .reveal .slides section > .columns {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+html.reveal-print.print-pdf .reveal .slides section > .slidebody {
+  margin-top: 0;
+  margin-bottom: auto;
+  width: 100%;
+}
+html.reveal-print.print-pdf .reveal .slides section > .vcenter {
+  margin-top: auto;
+  margin-bottom: auto;
+  width: 100%;
+}
+html.reveal-print.print-pdf .reveal .slides section.center { justify-content: center; }
 
 // The heading is pinned to the top of every slide so headings align across the
 // deck; everything below it shares the remaining space.
